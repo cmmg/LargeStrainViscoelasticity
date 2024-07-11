@@ -1,9 +1,6 @@
 #include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_out.h>
 
 #include <iostream>
-#include <fstream>
-#include <cmath>
 
 #include "parameters.h"
 
@@ -17,7 +14,6 @@ int main() {
 
     GridGenerator::hyper_cube(triangulation);
     triangulation.refine_global(4);
-
 
     std::cout << "-- Program end\n" << std::endl;
 
