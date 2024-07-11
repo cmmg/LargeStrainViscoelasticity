@@ -9,10 +9,6 @@
 
 using namespace dealii;
 
-namespace problem {
-    
-}
-
 int main() {
 
     std::cout << "\n-- Program start\n" << std::endl;
