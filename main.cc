@@ -1,5 +1,7 @@
 // For dividing the domain into cells (not necessarily the same things as elements)
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/fe/fe_system.h>
+#include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe.h>
 #include <deal.II/dofs/dof_tools.h>
@@ -26,12 +28,14 @@ class Problem {
         Triangulation<dim> triangulation;
         DoFHandler<dim> dof_handler;
         DataOut<dim> data_out;
+        FE_Q<dim> fe;
 };
 
 template <int dim>
-Problem<dim>::Problem ()  {
-    GridGenerator::hyper_cube(triangulation);
-}
+Problem<dim>::Problem () : 
+    dof_handler(triangulation),
+    fe(1)
+    {}
 
 template <int dim>
 void Problem<dim>::run () {
@@ -56,6 +60,21 @@ void Problem<dim>::queries () {
 }
 
 template <int dim>
+void Problem<dim>::setup_system () {
+    std::cout << "Setting up" << std::endl;
+
+    GridGenerator::hyper_cube(triangulation);
+    triangulation.refine_global(2);
+
+    std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
+    std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
+
+    dof_handler.distribute_dofs(fe);
+
+    std::cout << "Set up complete" << std::endl;
+}
+
+template <int dim>
 void Problem<dim>::output_results () {
     
     data_out.attach_dof_handler(dof_handler);
@@ -63,30 +82,19 @@ void Problem<dim>::output_results () {
     data_out.build_patches();
     data_out.write_vtu (output_file);
 
-}
-
-template <int dim>
-void Problem<dim>::setup_system () {
-    std::cout << "Setting up" << std::endl;
-
-    /*triangulation.refine_global(2);*/
-
-    FE_Q<dim> fe(1); 
-    dof_handler.initialize(triangulation, fe);
-    dof_handler.distribute_dofs(fe);
-
-    std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
-    std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
-    std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
+    std::cout << "Results written" << std::endl;
 
 }
+
     
 int main() {
 
     std::cout << "\n-- Simulation Started\n" << std::endl;
 
+    // Create the problem
     Problem<3> problem;
 
+    // Solve the problem
     problem.run();
 
     std::cout << "\n-- Simulation Ended\n" << std::endl;
