@@ -20,6 +20,7 @@ class Problem {
     private:
         void setup_system();
         void output_results();
+        void queries();
 
     private:
         Triangulation<dim> triangulation;
@@ -28,29 +29,30 @@ class Problem {
 };
 
 template <int dim>
-Problem<dim>::Problem () {
+Problem<dim>::Problem ()  {
     GridGenerator::hyper_cube(triangulation);
 }
 
 template <int dim>
 void Problem<dim>::run () {
     setup_system();
+    queries();
+    output_results();
 }
 
 template <int dim>
-void Problem<dim>::setup_system () {
-    std::cout << "Setting up" << std::endl;
+void Problem<dim>::queries () {
 
-    triangulation.refine_global(2);
+    std::vector<Point<dim>> all_vertices = triangulation.get_vertices();
 
-    std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
-    std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
-
-    FE_Q<dim> fe(1); 
-    dof_handler.initialize(triangulation, fe);
-    dof_handler.distribute_dofs(fe);
-
-    std::cout << "Set up complete" << std::endl;
+    std::cout << "\nCoordinates of all vertices" << std::endl;
+    for(auto vertex : all_vertices) {
+        std::cout << " x = " << vertex[0]
+                  << " y = " << vertex[1]
+                  << " z = " << vertex[2]
+                  << " norm = " << vertex.norm()
+                  << std::endl;
+    }
 }
 
 template <int dim>
@@ -63,15 +65,31 @@ void Problem<dim>::output_results () {
 
 }
 
+template <int dim>
+void Problem<dim>::setup_system () {
+    std::cout << "Setting up" << std::endl;
+
+    /*triangulation.refine_global(2);*/
+
+    FE_Q<dim> fe(1); 
+    dof_handler.initialize(triangulation, fe);
+    dof_handler.distribute_dofs(fe);
+
+    std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
+    std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
+    std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
+
+}
+    
 int main() {
 
-    std::cout << "\n-- Start\n" << std::endl;
+    std::cout << "\n-- Simulation Started\n" << std::endl;
 
     Problem<3> problem;
 
     problem.run();
 
-    std::cout << "\n-- End" << std::endl;
+    std::cout << "\n-- Simulation Ended\n" << std::endl;
 
     return 0;
 
