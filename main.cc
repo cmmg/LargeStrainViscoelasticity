@@ -1,9 +1,14 @@
 // For dividing the domain into cells (not necessarily the same things as elements)
 #include <deal.II/grid/grid_generator.h>
+
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/dofs/dof_tools.h>
+
+#include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+
 #include <deal.II/numerics/data_out.h>
 
 #include <iostream>
@@ -29,6 +34,8 @@ class Problem {
         FESystem<dim> fe;
         Vector<double> system_rhs;
         Vector<double> solution;
+        SparsityPattern sparsity_pattern;
+        SparseMatrix<double> system_matrix;
 };
 
 template <int dim>
@@ -50,8 +57,13 @@ void Problem<dim>::setup_system () {
     GridGenerator::hyper_cube(triangulation);
     triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
+
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
+
+    DynamicSparsityPattern dsp(dof_handler.n_dofs());
+    DoFTools::make_sparsity_pattern(dof_handler, dsp);
+    sparsity_pattern.copy_from(dsp);
 
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
