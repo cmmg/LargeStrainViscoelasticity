@@ -19,22 +19,24 @@ class Problem {
         Problem();
         void run();
 
-    private:
+    private: // functions
         void setup_system();
         void output_results();
         void queries();
 
-    private:
+    private: // variables
         Triangulation<dim> triangulation;
         DoFHandler<dim> dof_handler;
         DataOut<dim> data_out;
-        FE_Q<dim> fe;
+        FESystem<dim> fe;
+        Vector<double> system_rhs;
+        Vector<double> solution;
 };
 
 template <int dim>
 Problem<dim>::Problem () : 
     dof_handler(triangulation),
-    fe(1)
+    fe(FE_Q<dim>(1) ^ dim)
     {}
 
 template <int dim>
@@ -61,17 +63,19 @@ void Problem<dim>::queries () {
 
 template <int dim>
 void Problem<dim>::setup_system () {
-    std::cout << "Setting up" << std::endl;
+    std::cout << "-- Setting up\n" << std::endl;
 
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(2);
+    triangulation.refine_global(1);
+    dof_handler.distribute_dofs(fe);
+    solution.reinit(dof_handler.n_dofs());
+    system_rhs.reinit(dof_handler.n_dofs());
 
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
+    std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
 
-    dof_handler.distribute_dofs(fe);
-
-    std::cout << "Set up complete" << std::endl;
+    std::cout << "\n-- Set up complete" << std::endl;
 }
 
 template <int dim>
@@ -82,14 +86,14 @@ void Problem<dim>::output_results () {
     data_out.build_patches();
     data_out.write_vtu (output_file);
 
-    std::cout << "Results written" << std::endl;
+    std::cout << "\nResults written" << std::endl;
 
 }
 
     
 int main() {
 
-    std::cout << "\n-- Simulation Started\n" << std::endl;
+    std::cout << "\n---- Simulation started\n" << std::endl;
 
     // Create the problem
     Problem<3> problem;
@@ -97,7 +101,7 @@ int main() {
     // Solve the problem
     problem.run();
 
-    std::cout << "\n-- Simulation Ended\n" << std::endl;
+    std::cout << "\n---- Simulation ended" << std::endl;
 
     return 0;
 
