@@ -26,14 +26,13 @@ class Problem {
         Triangulation<dim> triangulation;
         DoFHandler<dim> dof_handler;
         DataOut<dim> data_out;
-        FE_Q<dim> fe; 
-
+        FESystem<dim> fe;
 };
 
 template <int dim>
 Problem<dim>::Problem () : 
     dof_handler(triangulation),
-    fe(1)
+    fe(FE_Q<dim>(1) ^ dim)
     {}
 
 template <int dim>
@@ -47,12 +46,14 @@ void Problem<dim>::setup_system () {
     std::cout << "Setting up" << std::endl;
 
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(2);
+    /*triangulation.refine_global(1);*/
 
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
 
     dof_handler.distribute_dofs(fe);
+
+    std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
 
     std::cout << "Set up complete" << std::endl;
 }
@@ -71,7 +72,7 @@ void Problem<dim>::output_results () {
 
 int main() {
 
-    std::cout << "\n-- Start\n" << std::endl;
+    std::cout << "\n-- Simulation started\n" << std::endl;
 
     // Create the problem
     Problem<3> problem;
@@ -79,7 +80,7 @@ int main() {
     // Solve the problem
     problem.run();
 
-    std::cout << "\n-- End" << std::endl;
+    std::cout << "\n-- Simulation ended" << std::endl;
 
     return 0;
 
