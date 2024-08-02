@@ -11,6 +11,8 @@
 
 #include <deal.II/numerics/data_out.h>
 
+#include <deal.II/physics/elasticity/standard_tensors.h>
+
 #include <iostream>
 
 #include "parameters.h"
@@ -42,7 +44,7 @@ class Problem {
 template <int dim>
 Problem<dim>::Problem () : 
     dof_handler(triangulation),
-    fe(FE_Q<dim>(1) ^ dim)
+    fe(FE_Q<dim>(1)^dim)
     {}
 
 template <int dim>
@@ -57,7 +59,7 @@ void Problem<dim>::setup_system () {
     std::cout << "-- Setting up\n" << std::endl;
 
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(1);
+    /*triangulation.refine_global(2);*/
     dof_handler.distribute_dofs(fe);
 
     solution.reinit(dof_handler.n_dofs());
@@ -79,46 +81,55 @@ void Problem<dim>::setup_system () {
 template <int dim>
 void Problem<dim>::assemble_system () {
 
-    std::cout << "\n-- Assembling system" << std::endl;
+    std::cout << "\n-- Assembling system\n" << std::endl;
 
     const QGauss<dim> quadrature_formula(fe.degree + 1);
     FEValues<dim> fe_values(fe,
                             quadrature_formula,
-                            update_values | update_gradients | update_JxW_values);
+                            update_values |
+                            update_gradients |
+                            update_quadrature_points |
+                            update_JxW_values);
+
+    // ------------- Tangent modulus computation begin -------------
+
+    // Declare and compute the Kronecker delta tensor
+    Tensor<2, dim> kronecker_delta; 
+    kronecker_delta = 0;
+    kronecker_delta[0][0] = 1;
+    kronecker_delta[1][1] = 1;
+    kronecker_delta[2][2] = 1;
+
+    // Compute the Lamè parameters
+    double lambda = (E * nu) / ((1 + nu) * (1 - 2 * nu));
+    double mu     = E / (2 * (1 + nu));
+
+    // Calculate the tangent modulus for hyperelasticity
+    Tensor<4, dim> tangent_modulus;
+    for(unsigned int i = 0; i < dim; i++) {
+        for(unsigned int j = 0; j < dim; j++) {
+            for(unsigned int k = 0; k < dim; k++) {
+                for(unsigned int l = 0; l < dim; l++) {
+                    tangent_modulus[i][j][k][l] = 
+                        lambda * kronecker_delta[i][j] * kronecker_delta[k][l]
+                        +
+                        mu * (kronecker_delta[i][k] * kronecker_delta[j][l] +
+                              kronecker_delta[i][l] * kronecker_delta[j][k]);
+                }
+            }
+        }
+    }
+
+    // -------------- Tangent modulus computation end --------------
 
     const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
 
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double> cell_rhs(dofs_per_cell);
 
-    // Derivative of stress with respect to strain. Calculation of this to be
-    // separated out into into its own function for more complicated
-    // constitutive models.
-    FullMatrix<double> tangent_modulus(6, 6);
-
-    double lambda = (E * nu) / ((1 + nu) * (1 - 2 * nu));
-    double mu     = 0.5 * E / (1 + nu);
-
-    tangent_modulus[0][0] = 2 * mu  + lambda;
-    tangent_modulus[1][1] = 2 * mu  + lambda;
-    tangent_modulus[2][2] = 2 * mu  + lambda;
-
-    tangent_modulus[0][1] = lambda;
-    tangent_modulus[1][0] = lambda;
-
-    tangent_modulus[0][2] = lambda;
-    tangent_modulus[2][0] = lambda;
-
-    tangent_modulus[1][2] = lambda;
-    tangent_modulus[2][1] = lambda;
-
-    tangent_modulus[3][3] = mu;
-    tangent_modulus[4][4] = mu;
-    tangent_modulus[5][5] = mu;
-
-    // -------------- Tangent modulus computation end --------------
-
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+    unsigned int n_quadrature_points = fe_values.n_quadrature_points;
 
     // Loop over all the cells of the triangulation
     for (const auto &cell : dof_handler.active_cell_iterators()) {
@@ -126,15 +137,36 @@ void Problem<dim>::assemble_system () {
         // Initialize the fe_values object with values relevant to the current cell
         fe_values.reinit(cell);
 
-        cell_matrix = 0; cell_rhs = 0;
+        // Initialize the cell matrix and the right hand side vector with zeros
+        cell_matrix = 0; 
+        cell_rhs = 0;
 
-        for (const unsigned int q_index : fe_values.quadrature_point_indices()) {
-            for (const unsigned int i : fe_values.dof_indices()) {
-                for (const unsigned int j : fe_values.dof_indices()) {
-                    cell_matrix(i, j) += 
-                        (fe_values.shape_grad(i, q_index) *
-                         fe_values.shape_grad(j, q_index) *
-                         fe_values.JxW(q_index));
+        // Quadrature loop for current cell
+        for (unsigned int q = 0; q < n_quadrature_points; q++) {
+
+            for (unsigned int i = 0; i < dofs_per_cell; i++) {
+
+                const unsigned int ci = fe_values
+                                        .get_fe()
+                                        .system_to_component_index(i)
+                                        .first;
+
+                for (unsigned int j = 0; j < dofs_per_cell; j++) {
+                    const unsigned int cj = fe_values
+                                            .get_fe()
+                                            .system_to_component_index(i)
+                                            .first;
+
+                    for (unsigned int di; di < dim; di++) {
+                        for (unsigned int dj; dj < dim; dj++) {
+                            cell_matrix(i, j) +=
+                                fe_values.shape_grad(i, q)[di] *
+                                tangent_modulus[ci][di][cj][dj] *
+                                fe_values.shape_grad(j, q)[dj] *
+                                fe_values.JxW(q);
+                        }
+                    }
+
                 }
             }
         }
