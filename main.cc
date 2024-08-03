@@ -69,10 +69,12 @@ template <int dim>
 void Problem<dim>::setup_system () {
     std::cout << "-- Setting up\n" << std::endl;
 
+    // Generate mesh
     GridGenerator::hyper_cube(triangulation);
     triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
 
+    // Generate linear algebra objets
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
 
@@ -80,6 +82,47 @@ void Problem<dim>::setup_system () {
     DoFTools::make_sparsity_pattern(dof_handler, dsp);
     sparsity_pattern.copy_from(dsp);
     system_matrix.reinit(sparsity_pattern);
+
+    // Set boundary indices. The following boundary indexing assumes that the
+    // domain is a cube of edge length 1 with sides parallel to and on the 3
+    // coordinate planes.
+
+    for (const auto &cell : triangulation.active_cell_iterators()) {
+        for (const auto &face : cell->face_iterators()) {
+            if (face->at_boundary()) {
+                const Point<dim> face_center = face->center();
+
+                // Face on the yz plane
+                if(face_center[0] == 0) face->set_boundary_id(0);
+
+                // Face opposite the yz plane
+                if(face_center[0] == 1) face->set_boundary_id(1);
+
+                // Face on the xz plane
+                if(face_center[1] == 0) face->set_boundary_id(2);
+
+                // Face opposite the xz plane
+                if(face_center[1] == 1) face->set_boundary_id(3);
+
+                // Face on the xy plane
+                if(face_center[2] == 0) face->set_boundary_id(4);
+
+                // Face opposite the xy plane
+                if(face_center[2] == 1) face->set_boundary_id(5);
+
+            }
+        }
+    }
+
+    for (const auto &cell : triangulation.active_cell_iterators()) {
+        for (const auto &face : cell->face_iterators()) {
+            if (face->at_boundary()) {
+                std::cout << face->boundary_id() << std::endl;
+                std::cout << face->center() << std::endl;
+            }
+        }
+    }
+    
 
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
