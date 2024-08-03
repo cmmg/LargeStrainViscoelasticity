@@ -11,8 +11,6 @@
 
 #include <deal.II/numerics/data_out.h>
 
-#include <deal.II/physics/elasticity/standard_tensors.h>
-
 #include <iostream>
 
 #include "parameters.h"
@@ -28,17 +26,30 @@ class Problem {
     private: // functions
         void setup_system();
         void assemble_system();
+        void solve_linear_system();
         void output_results();
 
     private: // variables
+        // Meshing
         Triangulation<dim> triangulation;
         DoFHandler<dim> dof_handler;
-        DataOut<dim> data_out;
         FESystem<dim> fe;
+
+        // Time stepping
+        double current_time;
+        double delta_t;
+        double total_time;
+        double step_no;
+
+        // Linear algebra
         Vector<double> system_rhs;
         Vector<double> solution;
         SparsityPattern sparsity_pattern;
         SparseMatrix<double> system_matrix;
+        AffineConstraints<double> constraints;
+
+        // Graphical output
+        DataOut<dim> data_out;
 };
 
 template <int dim>
@@ -59,7 +70,7 @@ void Problem<dim>::setup_system () {
     std::cout << "-- Setting up\n" << std::endl;
 
     GridGenerator::hyper_cube(triangulation);
-    /*triangulation.refine_global(2);*/
+    triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
 
     solution.reinit(dof_handler.n_dofs());
@@ -91,8 +102,10 @@ void Problem<dim>::assemble_system () {
                             update_quadrature_points |
                             update_JxW_values);
 
-    // ------------- Tangent modulus computation begin -------------
+    unsigned int n_quadrature_points = fe_values.n_quadrature_points;
 
+    // Constitutive model computation begin -------------
+    
     // Declare and compute the Kronecker delta tensor
     Tensor<2, dim> kronecker_delta; 
     kronecker_delta = 0;
@@ -100,7 +113,7 @@ void Problem<dim>::assemble_system () {
     kronecker_delta[1][1] = 1;
     kronecker_delta[2][2] = 1;
 
-    // Compute the Lamè parameters
+    // Compute the Lamè parameters. E and nu are in the parameters.h file.
     double lambda = (E * nu) / ((1 + nu) * (1 - 2 * nu));
     double mu     = E / (2 * (1 + nu));
 
@@ -120,16 +133,16 @@ void Problem<dim>::assemble_system () {
         }
     }
 
-    // -------------- Tangent modulus computation end --------------
+    // Constitutive model computation end --------------
 
     const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
 
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double> cell_rhs(dofs_per_cell);
 
+    // types::global_dof_index is an unsigned int of 32 bits in most cases. So
+    // the following is an array of integers
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
-
-    unsigned int n_quadrature_points = fe_values.n_quadrature_points;
 
     // Loop over all the cells of the triangulation
     for (const auto &cell : dof_handler.active_cell_iterators()) {
@@ -166,10 +179,18 @@ void Problem<dim>::assemble_system () {
                                 fe_values.JxW(q);
                         }
                     }
-
                 }
             }
         }
+
+        // Distribute local contributions to global system
+        cell->get_dof_indices(local_dof_indices);
+        constraints.distribute_local_to_global(
+                    cell_matrix,
+                    cell_rhs,
+                    local_dof_indices,
+                    system_matrix,
+                    system_rhs);
     }
 
     std::cout << "\n-- Assembly complete" << std::endl;
