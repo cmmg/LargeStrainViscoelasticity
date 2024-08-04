@@ -10,6 +10,7 @@
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/precondition.h>
+#include <deal.II/lac/identity_matrix.h>
 
 // Boundary conditions
 #include <deal.II/numerics/vector_tools.h>
@@ -176,9 +177,6 @@ void Problem<dim>::assemble_system () {
 
     std::cout << "\n-- Assembling system\n" << std::endl;
 
-    text_output_file << "Printing system matrix from assembly function "
-                     << std::endl;
-
     FEValues<dim> fe_values(fe,
                             quadrature_formula,
                             update_values |
@@ -249,7 +247,7 @@ void Problem<dim>::assemble_system () {
 
                 const unsigned int cj = fe_values
                                         .get_fe()
-                                        .system_to_component_index(i)
+                                        .system_to_component_index(j)
                                         .first;
 
                 // Quadrature loop for current cell
@@ -264,8 +262,7 @@ void Problem<dim>::assemble_system () {
                         }
                     }
                 } // End of quadrature loop
-                text_output_file << cell_matrix(i, j) << " ";
-            } text_output_file << std::endl; // End of j loop
+            } // End of j loop
         } // End of i loop
 
 
@@ -330,17 +327,13 @@ void Problem<dim>::assemble_system () {
                             boundary_values,
                             fe.component_mask(z_component));
 
-    text_output_file << "Before applying bcs" << std::endl;
-    text_output_file << "solution " << std::endl;
-    solution.print(text_output_file); 
-    text_output_file << "system rhs " << std::endl;
-    system_rhs.print(text_output_file); 
-    text_output_file << "system matrix " << std::endl;
-    for(unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
-        for(unsigned int j = 0; j < dof_handler.n_dofs(); j++) {
+    /*std::cout << "Before applying boundary conditions" << std::endl;*/
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
+        for (unsigned int j = 0; j < dof_handler.n_dofs(); j++) {
             text_output_file << system_matrix(i, j) << " ";
-        }text_output_file << std::endl;
-    }text_output_file << std::endl;
+        } text_output_file << std::endl;
+    }
+    /*    std::cout << solution(i) << " " << system_rhs(i) << std::endl;*/
 
     // Apply the boundary values created above
     MatrixTools::apply_boundary_values(
@@ -350,43 +343,24 @@ void Problem<dim>::assemble_system () {
                             system_rhs,
                             false);
 
-    text_output_file << "\nAfter applying bcs" << std::endl;
-    text_output_file << "solution " << std::endl;
-    solution.print(text_output_file); 
-    text_output_file << "system rhs " << std::endl;
-    system_rhs.print(text_output_file); 
-    text_output_file << "system matrix " << std::endl;
-    for(unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
-        for(unsigned int j = 0; j < dof_handler.n_dofs(); j++) {
-            text_output_file << system_matrix(i, j) << " ";
-        }text_output_file << std::endl;
-    }text_output_file << std::endl;
+    /*std::cout << "After applying boundary conditions" << std::endl;*/
+    /*for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)*/
+    /*    std::cout << system_matrix(i, i) << std::endl;*/
+    /*    std::cout << solution(i) << " " << system_rhs(i) << std::endl;*/
 
     std::cout << "\n-- Assembly complete" << std::endl;
 }
 
 template <int dim>
 void Problem<dim>::solve_linear_system () {
+
     // The solver will do a maximum of 1000 iterations before giving up
-    SolverControl solver_control(1000, 1e-6 * system_rhs.l2_norm());
+    SolverControl solver_control(1000, 1e-6);
     SolverCG<Vector<double>> solver_cg(solver_control);
-
-    /*PreconditionSSOR<SparseMatrix<double>> preconditioner;*/
-    /*preconditioner.initialize(system_matrix, 1.2);*/
-
-    text_output_file << "\nBefore solving" << std::endl;
-    text_output_file << "solution " << std::endl;
-    solution.print(text_output_file); 
-    text_output_file << "system rhs " << std::endl;
-    system_rhs.print(text_output_file); 
-
-    solver_cg.solve(system_matrix, solution, system_rhs, PreconditionIdentity());
-
-    text_output_file << "\nAfter solvin" << std::endl;
-    text_output_file << "solution " << std::endl;
-    solution.print(text_output_file); 
-    text_output_file << "system rhs " << std::endl;
-    system_rhs.print(text_output_file); 
+    solver_cg.solve(system_matrix,
+                    solution,
+                    system_rhs,
+                    IdentityMatrix(solution.size()));
 
     std::cout << "\n-- " << solver_control.last_step()
         << " iterations needed to obtain convergence."
