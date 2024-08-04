@@ -114,16 +114,6 @@ void Problem<dim>::setup_system () {
         }
     }
 
-    for (const auto &cell : triangulation.active_cell_iterators()) {
-        for (const auto &face : cell->face_iterators()) {
-            if (face->at_boundary()) {
-                std::cout << face->boundary_id() << std::endl;
-                std::cout << face->center() << std::endl;
-            }
-        }
-    }
-    
-
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
     std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
@@ -248,6 +238,39 @@ void Problem<dim>::output_results () {
     data_out.write_vtu (output_file);
 
     std::cout << "\nResults written" << std::endl;
+}
+
+template <int dim>
+class VelocityBoundaryCondition : public Function<dim> {
+    public:
+    VelocityBoundaryCondition(
+        const double current_time,
+        const double speed);
+
+    virtual void vector_value(const Point<dim> &p,
+                              Vector<double> &values) const override;
+
+    private:
+    const double current_time;
+    const double speed;
+};
+
+// The variables current_time and speed will be passed to the constructor for
+// the velocity boundary conditions class by the top level class for the
+// problem at the moment the interpolate_boundary_conditions function is called
+template <int dim>
+VelocityBoundaryCondition<dim>::VelocityBoundaryCondition(
+    const double current_time,
+    const double speed) : Function<dim>(dim)
+    , current_time(current_time)
+    , speed(speed)
+{}
+
+template <int dim>
+void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &p,
+                                             Vector<double> &values) const {
+    values = 0;
+    values(2) = - speed * current_time;
 }
 
 int main() {
