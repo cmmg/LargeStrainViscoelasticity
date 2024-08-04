@@ -34,6 +34,7 @@ class Problem {
         Triangulation<dim> triangulation;
         DoFHandler<dim> dof_handler;
         FESystem<dim> fe;
+        QGauss<dim> quadrature_formula;
 
         // Time stepping
         double current_time;
@@ -55,7 +56,8 @@ class Problem {
 template <int dim>
 Problem<dim>::Problem () : 
     dof_handler(triangulation),
-    fe(FE_Q<dim>(1)^dim)
+    fe(FE_Q<dim>(1)^dim),
+    quadrature_formula(fe.degree + 1)
     {}
 
 template <int dim>
@@ -127,7 +129,6 @@ void Problem<dim>::assemble_system () {
 
     std::cout << "\n-- Assembling system\n" << std::endl;
 
-    const QGauss<dim> quadrature_formula(fe.degree + 1);
     FEValues<dim> fe_values(fe,
                             quadrature_formula,
                             update_values |
