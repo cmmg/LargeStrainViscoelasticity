@@ -13,6 +13,7 @@
 
 // Boundary conditions
 #include <deal.II/numerics/vector_tools.h>
+#include <deal.II/numerics/matrix_tools.h>
 
 // Graphical output
 #include <deal.II/numerics/data_out.h>
@@ -90,7 +91,8 @@ class Problem {
         SparseMatrix<double> system_matrix;
         AffineConstraints<double> constraints;
 
-        // Graphical output
+        // Output
+        std::ofstream text_output_file;
         DataOut<dim> data_out;
 };
 
@@ -98,14 +100,15 @@ template <int dim>
 Problem<dim>::Problem () : 
     dof_handler(triangulation),
     fe(FE_Q<dim>(1)^dim),
-    quadrature_formula(fe.degree + 1)
+    quadrature_formula(fe.degree + 1),
+    text_output_file("text_output_file.txt")
     {}
 
 template <int dim>
 void Problem<dim>::run () {
     setup_system();
 
-    current_time = 0.1;
+    current_time = 1e-3;
     assemble_system();
     solve_linear_system();
     output_results();
@@ -173,6 +176,9 @@ void Problem<dim>::assemble_system () {
 
     std::cout << "\n-- Assembling system\n" << std::endl;
 
+    text_output_file << "Printing system matrix from assembly function "
+                     << std::endl;
+
     FEValues<dim> fe_values(fe,
                             quadrature_formula,
                             update_values |
@@ -232,24 +238,24 @@ void Problem<dim>::assemble_system () {
         cell_matrix = 0; 
         cell_rhs = 0;
 
-        // Quadrature loop for current cell
-        for (unsigned int q = 0; q < n_quadrature_points; q++) {
+        for (unsigned int i = 0; i < dofs_per_cell; i++) {
 
-            for (unsigned int i = 0; i < dofs_per_cell; i++) {
+            const unsigned int ci = fe_values
+                                    .get_fe()
+                                    .system_to_component_index(i)
+                                    .first;
 
-                const unsigned int ci = fe_values
+            for (unsigned int j = 0; j < dofs_per_cell; j++) {
+
+                const unsigned int cj = fe_values
                                         .get_fe()
                                         .system_to_component_index(i)
                                         .first;
 
-                for (unsigned int j = 0; j < dofs_per_cell; j++) {
-                    const unsigned int cj = fe_values
-                                            .get_fe()
-                                            .system_to_component_index(i)
-                                            .first;
-
-                    for (unsigned int di; di < dim; di++) {
-                        for (unsigned int dj; dj < dim; dj++) {
+                // Quadrature loop for current cell
+                for (unsigned int q = 0; q < n_quadrature_points; q++) {
+                    for (unsigned int di = 0; di < dim; di++) {
+                        for (unsigned int dj = 0; dj < dim; dj++) {
                             cell_matrix(i, j) +=
                                 fe_values.shape_grad(i, q)[di] *
                                 tangent_modulus[ci][di][cj][dj] *
@@ -257,9 +263,11 @@ void Problem<dim>::assemble_system () {
                                 fe_values.JxW(q);
                         }
                     }
-                }
-            }
-        }
+                } // End of quadrature loop
+                text_output_file << cell_matrix(i, j) << " ";
+            } text_output_file << std::endl; // End of j loop
+        } // End of i loop
+
 
         // Distribute local contributions to global system
         cell->get_dof_indices(local_dof_indices);
@@ -322,29 +330,63 @@ void Problem<dim>::assemble_system () {
                             boundary_values,
                             fe.component_mask(z_component));
 
+    text_output_file << "Before applying bcs" << std::endl;
+    text_output_file << "solution " << std::endl;
+    solution.print(text_output_file); 
+    text_output_file << "system rhs " << std::endl;
+    system_rhs.print(text_output_file); 
+    text_output_file << "system matrix " << std::endl;
+    for(unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
+        for(unsigned int j = 0; j < dof_handler.n_dofs(); j++) {
+            text_output_file << system_matrix(i, j) << " ";
+        }text_output_file << std::endl;
+    }text_output_file << std::endl;
+
+    // Apply the boundary values created above
+    MatrixTools::apply_boundary_values(
+                            boundary_values,
+                            system_matrix,
+                            solution,
+                            system_rhs,
+                            false);
+
+    text_output_file << "\nAfter applying bcs" << std::endl;
+    text_output_file << "solution " << std::endl;
+    solution.print(text_output_file); 
+    text_output_file << "system rhs " << std::endl;
+    system_rhs.print(text_output_file); 
+    text_output_file << "system matrix " << std::endl;
+    for(unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
+        for(unsigned int j = 0; j < dof_handler.n_dofs(); j++) {
+            text_output_file << system_matrix(i, j) << " ";
+        }text_output_file << std::endl;
+    }text_output_file << std::endl;
+
     std::cout << "\n-- Assembly complete" << std::endl;
 }
 
 template <int dim>
 void Problem<dim>::solve_linear_system () {
     // The solver will do a maximum of 1000 iterations before giving up
-    SolverControl solver_control(1000, 1e-12);
-    SolverCG<Vector<double>> cg(solver_control);
+    SolverControl solver_control(1000, 1e-6 * system_rhs.l2_norm());
+    SolverCG<Vector<double>> solver_cg(solver_control);
 
-    PreconditionSSOR<SparseMatrix<double>> preconditioner;
-    preconditioner.initialize(system_matrix, 1.2);
+    /*PreconditionSSOR<SparseMatrix<double>> preconditioner;*/
+    /*preconditioner.initialize(system_matrix, 1.2);*/
 
-    std::cout << "Solution before solving" << std::endl;
-    solution.print(std::cout);
-    std::cout << "System rhs before solving" << std::endl;
-    system_rhs.print(std::cout);
+    text_output_file << "\nBefore solving" << std::endl;
+    text_output_file << "solution " << std::endl;
+    solution.print(text_output_file); 
+    text_output_file << "system rhs " << std::endl;
+    system_rhs.print(text_output_file); 
 
-    cg.solve(system_matrix, solution, system_rhs, preconditioner);
+    solver_cg.solve(system_matrix, solution, system_rhs, PreconditionIdentity());
 
-    std::cout << "Solution after solving" << std::endl;
-    solution.print(std::cout);
-    std::cout << "System rhs after solving" << std::endl;
-    system_rhs.print(std::cout);
+    text_output_file << "\nAfter solvin" << std::endl;
+    text_output_file << "solution " << std::endl;
+    solution.print(text_output_file); 
+    text_output_file << "system rhs " << std::endl;
+    system_rhs.print(text_output_file); 
 
     std::cout << "\n-- " << solver_control.last_step()
         << " iterations needed to obtain convergence."
