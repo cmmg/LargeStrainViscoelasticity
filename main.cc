@@ -1,14 +1,20 @@
-// For dividing the domain into cells (not necessarily the same things as elements)
+// Mesh generation
 #include <deal.II/grid/grid_generator.h>
-
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_values.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/dofs/dof_tools.h>
 
+// Linear algebra
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/precondition.h>
 
+// Boundary conditions
+#include <deal.II/numerics/vector_tools.h>
+
+// Graphical output
 #include <deal.II/numerics/data_out.h>
 
 #include <iostream>
@@ -16,6 +22,41 @@
 #include "parameters.h"
 
 using namespace dealii;
+
+template <int dim>
+class VelocityBoundaryCondition : public Function<dim> {
+    public:
+    VelocityBoundaryCondition(
+        const double current_time,
+        const double speed);
+
+    virtual void vector_value(const Point<dim> &p,
+                              Vector<double> &values) const override;
+
+    private:
+    const double current_time;
+    const double speed;
+};
+
+// The variables current_time and speed will be passed to the constructor for
+// the velocity boundary conditions class by the top level class for the
+// problem at the moment the interpolate_boundary_conditions function is called
+template <int dim>
+VelocityBoundaryCondition<dim>::VelocityBoundaryCondition(
+    const double current_time,
+    const double speed) : Function<dim>(dim)
+    , current_time(current_time)
+    , speed(speed)
+{}
+
+template <int dim>
+void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
+                                             Vector<double> &values) const {
+    // The variable name p has been commented out to avoid compiler warnings
+    // about unused variables
+    values = 0;
+    values(2) = - speed * current_time;
+}
 
 template <int dim>
 class Problem {
@@ -63,7 +104,10 @@ Problem<dim>::Problem () :
 template <int dim>
 void Problem<dim>::run () {
     setup_system();
+
+    current_time = 0.1;
     assemble_system();
+    solve_linear_system();
     output_results();
 }
 
@@ -73,7 +117,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(1);
+    /*triangulation.refine_global(1);*/
     dof_handler.distribute_dofs(fe);
 
     // Generate linear algebra objets
@@ -225,53 +269,98 @@ void Problem<dim>::assemble_system () {
                     local_dof_indices,
                     system_matrix,
                     system_rhs);
-    }
+
+    } // End of loop over all cells
+
+    // Start applying boundary conditions
+
+    // Create an object that will hold the values of the boundary conditions
+    std::map<types::global_dof_index, double> boundary_values;
+
+    // The following are three arrays of boolean values that tell the
+    // interpolate_boundary_values function which component to apply the
+    // boundary values to.
+    const FEValuesExtractors::Scalar x_component(0);
+    const FEValuesExtractors::Scalar y_component(1);
+    const FEValuesExtractors::Scalar z_component(2);
+
+    // The face on the yz plane has boundary indicator of 0 and must be kept
+    // from moving in the x direction
+    VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            0,
+                            Functions::ZeroFunction<dim>(dim),
+                            boundary_values,
+                            fe.component_mask(x_component));
+
+    // The face on the xz plane has boundary indicator of 2 and must be kept
+    // from moving in the y direction
+    VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            2,
+                            Functions::ZeroFunction<dim>(dim),
+                            boundary_values,
+                            fe.component_mask(y_component));
+
+    // The face on the xy plane has boundary indicator of 4 and must be kept
+    // from moving in the z direction
+    VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            4,
+                            Functions::ZeroFunction<dim>(dim),
+                            boundary_values,
+                            fe.component_mask(z_component));
+
+    std::cout << "Current time : " << current_time << std::endl;
+
+    // The face opposite the xy plane has boundary indicator of 5. This is
+    // where the velocity boundary condition must be applied.
+    VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            5,
+                            VelocityBoundaryCondition<dim>(current_time, z1_speed),
+                            boundary_values,
+                            fe.component_mask(z_component));
 
     std::cout << "\n-- Assembly complete" << std::endl;
 }
 
 template <int dim>
+void Problem<dim>::solve_linear_system () {
+    // The solver will do a maximum of 1000 iterations before giving up
+    SolverControl solver_control(1000, 1e-12);
+    SolverCG<Vector<double>> cg(solver_control);
+
+    PreconditionSSOR<SparseMatrix<double>> preconditioner;
+    preconditioner.initialize(system_matrix, 1.2);
+
+    std::cout << "Solution before solving" << std::endl;
+    solution.print(std::cout);
+    std::cout << "System rhs before solving" << std::endl;
+    system_rhs.print(std::cout);
+
+    cg.solve(system_matrix, solution, system_rhs, preconditioner);
+
+    std::cout << "Solution after solving" << std::endl;
+    solution.print(std::cout);
+    std::cout << "System rhs after solving" << std::endl;
+    system_rhs.print(std::cout);
+
+    std::cout << "\n-- " << solver_control.last_step()
+        << " iterations needed to obtain convergence."
+        << std::endl;
+}
+
+template <int dim>
 void Problem<dim>::output_results () {
     
-    data_out.attach_dof_handler(dof_handler);
     std::ofstream output_file("solution.vtu");
+    
+    data_out.attach_dof_handler(dof_handler);
     data_out.build_patches();
     data_out.write_vtu (output_file);
 
     std::cout << "\nResults written" << std::endl;
-}
-
-template <int dim>
-class VelocityBoundaryCondition : public Function<dim> {
-    public:
-    VelocityBoundaryCondition(
-        const double current_time,
-        const double speed);
-
-    virtual void vector_value(const Point<dim> &p,
-                              Vector<double> &values) const override;
-
-    private:
-    const double current_time;
-    const double speed;
-};
-
-// The variables current_time and speed will be passed to the constructor for
-// the velocity boundary conditions class by the top level class for the
-// problem at the moment the interpolate_boundary_conditions function is called
-template <int dim>
-VelocityBoundaryCondition<dim>::VelocityBoundaryCondition(
-    const double current_time,
-    const double speed) : Function<dim>(dim)
-    , current_time(current_time)
-    , speed(speed)
-{}
-
-template <int dim>
-void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &p,
-                                             Vector<double> &values) const {
-    values = 0;
-    values(2) = - speed * current_time;
 }
 
 int main() {
