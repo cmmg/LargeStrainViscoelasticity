@@ -373,7 +373,16 @@ void Problem<dim>::output_results () {
     std::ofstream output_file("solution.vtu");
     
     data_out.attach_dof_handler(dof_handler);
-    data_out.build_patches();
+
+    std::vector<std::string> solution_names;
+
+    solution_names.emplace_back("x_displacement");
+    solution_names.emplace_back("y_displacement");
+    solution_names.emplace_back("z_displacement");
+
+    data_out.add_data_vector(solution, solution_names);
+
+    data_out.build_patches();;
     data_out.write_vtu (output_file);
 
     std::cout << "\nResults written" << std::endl;
