@@ -121,15 +121,15 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    /*triangulation.refine_global(1);*/
+    triangulation.refine_global(2);
     dof_handler.distribute_dofs(fe);
 
     // Generate linear algebra objets
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
 
-    DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
-    DoFTools::make_sparsity_pattern(dof_handler, dsp);
+    DynamicSparsityPattern dsp(dof_handler.n_dofs());
+    DoFTools::make_sparsity_pattern(dof_handler, dsp, constraints, false);
     sparsity_pattern.copy_from(dsp);
     system_matrix.reinit(sparsity_pattern);
 
@@ -328,11 +328,11 @@ void Problem<dim>::assemble_system () {
                             fe.component_mask(z_component));
 
     /*std::cout << "Before applying boundary conditions" << std::endl;*/
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
-        for (unsigned int j = 0; j < dof_handler.n_dofs(); j++) {
-            text_output_file << system_matrix(i, j) << " ";
-        } text_output_file << std::endl;
-    }
+    /*for (unsigned int i = 0; i < dof_handler.n_dofs(); i++) {*/
+    /*    for (unsigned int j = 0; j < dof_handler.n_dofs(); j++) {*/
+    /*        text_output_file << system_matrix(i, j) << " ";*/
+    /*    } text_output_file << std::endl;*/
+    /*}*/
     /*    std::cout << solution(i) << " " << system_rhs(i) << std::endl;*/
 
     // Apply the boundary values created above
