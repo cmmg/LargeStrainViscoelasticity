@@ -5,6 +5,13 @@
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/dofs/dof_tools.h>
 
+// Store data at quadrature points
+#include <deal.II/base/quadrature_point_data.h>
+
+// For calculating strain tensors at quadrature points
+#include <deal.II/physics/elasticity/kinematics.h>
+#include <deal.II/physics/elasticity/standard_tensors.h>
+
 // Linear algebra
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
@@ -24,6 +31,17 @@
 #include "parameters.h"
 
 using namespace dealii;
+
+template <int dim>
+class PointHistory {
+    public:
+        PointHistory() : sigma(Physics::Elasticity::StandardTensors<dim>::I) {}
+    
+    private:
+        SymmetricTensor<2, dim> sigma;
+
+    virtual ~PointHistory() = default;
+};
 
 template <int dim>
 class VelocityBoundaryCondition : public Function<dim> {
@@ -121,7 +139,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(2);
+    triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
 
     // Generate linear algebra objets
@@ -222,15 +240,26 @@ void Problem<dim>::assemble_system () {
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double> cell_rhs(dofs_per_cell);
 
-    // types::global_dof_index is an unsigned int of 32 bits in most cases. So
-    // the following is an array of integers
+    // types::global_dof_index is an unsigned int of 32 bits on most systems.
+    // So the following is an array of integers.
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+    // Vector of vectors for storing the gradients of the displacement field at the
+    // integration points of the cell. The outer vector has length equal to the
+    // number of quadrature points in a cell. Each of the inner vectors is a
+    // list of dim elements of type Tensor<1, dim>.
+    std::vector<std::vector<Tensor<1, dim>>> solution_gradients(
+                                                quadrature_formula.size(),
+                                                std::vector<Tensor<1, dim>>(dim));
 
     // Loop over all the cells of the triangulation
     for (const auto &cell : dof_handler.active_cell_iterators()) {
 
         // Initialize the fe_values object with values relevant to the current cell
         fe_values.reinit(cell);
+
+        // Get displacement gradients at all integration points of the cell from dealii
+        fe_values.get_function_gradients(solution, solution_gradients);
 
         // Initialize the cell matrix and the right hand side vector with zeros
         cell_matrix = 0; 
@@ -274,6 +303,12 @@ void Problem<dim>::assemble_system () {
                     local_dof_indices,
                     system_matrix,
                     system_rhs);
+
+        /*types::global_cell_index cell_id = cell->active_cell_index();*/
+        /*std::cout << "Cell id : " << cell_id + 1 << "\n";*/
+        /*for(auto id : local_dof_indices) */
+        /*    std::cout << id + 1 << " ";*/
+        /*std::cout << "\n";*/
 
     } // End of loop over all cells
 
@@ -327,14 +362,6 @@ void Problem<dim>::assemble_system () {
                             boundary_values,
                             fe.component_mask(z_component));
 
-    /*std::cout << "Before applying boundary conditions" << std::endl;*/
-    /*for (unsigned int i = 0; i < dof_handler.n_dofs(); i++) {*/
-    /*    for (unsigned int j = 0; j < dof_handler.n_dofs(); j++) {*/
-    /*        text_output_file << system_matrix(i, j) << " ";*/
-    /*    } text_output_file << std::endl;*/
-    /*}*/
-    /*    std::cout << solution(i) << " " << system_rhs(i) << std::endl;*/
-
     // Apply the boundary values created above
     MatrixTools::apply_boundary_values(
                             boundary_values,
@@ -342,11 +369,6 @@ void Problem<dim>::assemble_system () {
                             solution,
                             system_rhs,
                             false);
-
-    /*std::cout << "After applying boundary conditions" << std::endl;*/
-    /*for (unsigned int i = 0; i < dof_handler.n_dofs(); i++)*/
-    /*    std::cout << system_matrix(i, i) << std::endl;*/
-    /*    std::cout << solution(i) << " " << system_rhs(i) << std::endl;*/
 
     std::cout << "\n-- Assembly complete" << std::endl;
 }
