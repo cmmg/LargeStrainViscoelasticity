@@ -35,12 +35,31 @@ using namespace dealii;
 template <int dim>
 class PointHistory {
     public:
-        PointHistory() : sigma(Physics::Elasticity::StandardTensors<dim>::I) {}
-    
-    private:
-        SymmetricTensor<2, dim> sigma;
+        PointHistory() {
 
-    virtual ~PointHistory() = default;
+            second_pk_stress = 0;
+            deformation_gradient = Physics::Elasticity::StandardTensors<dim>::I;
+
+            // Compute the Lamè parameters. Y and nu are in the parameters.h file.
+            double lambda = (Y * nu) / ((1 + nu) * (1 - 2 * nu));
+            double mu     = Y / (2 * (1 + nu));
+
+            // Calculate the tangent modulus for hyperelasticity
+            for (unsigned int i = 0; i < dim; ++i)
+                for (unsigned int j = 0; j < dim; ++j)
+                    for (unsigned int k = 0; k < dim; ++k)
+                        for (unsigned int l = 0; l < dim; ++l)
+                            tangent_modulus[i][j][k][l] = 
+                                  (((i == k) && (j == l) ? mu : 0.0) +
+                                   ((i == l) && (j == k) ? mu : 0.0) +
+                                   ((i == j) && (k == l) ? lambda : 0.0));
+
+        }
+
+        virtual ~PointHistory() = default;
+        Tensor<2, dim> deformation_gradient;
+        SymmetricTensor<2, dim> second_pk_stress;
+        SymmetricTensor<4, dim> tangent_modulus;
 };
 
 template <int dim>
@@ -86,8 +105,9 @@ class Problem {
 
     private: // functions
         void setup_system();
-        void assemble_system();
+        void assemble_linear_system();
         void solve_linear_system();
+        void update_quadrature_point_histories();
         void output_results();
 
     private: // variables
@@ -96,12 +116,17 @@ class Problem {
         DoFHandler<dim> dof_handler;
         FESystem<dim> fe;
         QGauss<dim> quadrature_formula;
+        FEValues<dim> fe_values;
+
+        // History data at quadrature points
+        CellDataStorage<typename Triangulation<dim>::cell_iterator, PointHistory<dim>>
+        quadrature_point_history;
 
         // Time stepping
         double current_time;
         double delta_t;
         double total_time;
-        double step_no;
+        int step_number;
 
         // Linear algebra
         Vector<double> system_rhs;
@@ -120,6 +145,17 @@ Problem<dim>::Problem () :
     dof_handler(triangulation),
     fe(FE_Q<dim>(1)^dim),
     quadrature_formula(fe.degree + 1),
+    fe_values(
+            fe,
+            quadrature_formula,
+            update_values |
+            update_quadrature_points |
+            update_gradients |
+            update_JxW_values),
+    current_time(0),
+    delta_t(1e-3),
+    total_time(2e-3),
+    step_number(0),
     text_output_file("text_output_file.txt")
     {}
 
@@ -127,10 +163,23 @@ template <int dim>
 void Problem<dim>::run () {
     setup_system();
 
-    current_time = 1e-3;
-    assemble_system();
+    current_time += delta_t; 
+    step_number++;
+
+    std::cout << "\n"
+              << "Step number : " << step_number
+              << " "
+              << "Current time : " << current_time
+              << "\n";
+
+    assemble_linear_system();
+    std::cout << "Current residual l2 norm : " 
+              << system_rhs.l2_norm() 
+              << "\n";
+
     solve_linear_system();
-    output_results();
+    update_quadrature_point_histories();
+    /*output_results();*/
 }
 
 template <int dim>
@@ -141,6 +190,11 @@ void Problem<dim>::setup_system () {
     GridGenerator::hyper_cube(triangulation);
     triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
+
+    // Make space for all the history variables of the system
+    quadrature_point_history.initialize(triangulation.begin_active(),
+                                        triangulation.end(),
+                                        quadrature_formula.size());
 
     // Generate linear algebra objets
     solution.reinit(dof_handler.n_dofs());
@@ -187,70 +241,28 @@ void Problem<dim>::setup_system () {
     std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
     std::cout << "FE system dealii name : " << fe.get_name() << std::endl;
 
-    std::cout << "\n-- Set up complete" << std::endl;
 }
 
 template <int dim>
-void Problem<dim>::assemble_system () {
+void Problem<dim>::assemble_linear_system () {
 
-    std::cout << "\n-- Assembling system\n" << std::endl;
-
-    FEValues<dim> fe_values(fe,
-                            quadrature_formula,
-                            update_values |
-                            update_gradients |
-                            update_quadrature_points |
-                            update_JxW_values);
-
-    unsigned int n_quadrature_points = fe_values.n_quadrature_points;
-
-    // Constitutive model computation begin -------------
-    
-    // Declare and compute the Kronecker delta tensor
-    Tensor<2, dim> kronecker_delta; 
-    kronecker_delta = 0;
-    kronecker_delta[0][0] = 1;
-    kronecker_delta[1][1] = 1;
-    kronecker_delta[2][2] = 1;
-
-    // Compute the Lamè parameters. E and nu are in the parameters.h file.
-    double lambda = (E * nu) / ((1 + nu) * (1 - 2 * nu));
-    double mu     = E / (2 * (1 + nu));
-
-    // Calculate the tangent modulus for hyperelasticity
-    Tensor<4, dim> tangent_modulus;
-    for(unsigned int i = 0; i < dim; i++) {
-        for(unsigned int j = 0; j < dim; j++) {
-            for(unsigned int k = 0; k < dim; k++) {
-                for(unsigned int l = 0; l < dim; l++) {
-                    tangent_modulus[i][j][k][l] = 
-                        lambda * kronecker_delta[i][j] * kronecker_delta[k][l]
-                        +
-                        mu * (kronecker_delta[i][k] * kronecker_delta[j][l] +
-                              kronecker_delta[i][l] * kronecker_delta[j][k]);
-                }
-            }
-        }
-    }
-
-    // Constitutive model computation end --------------
-
-    const unsigned int dofs_per_cell = fe.n_dofs_per_cell();
+    const unsigned int dofs_per_cell       = fe.n_dofs_per_cell();
+    const unsigned int n_quadrature_points = fe_values.n_quadrature_points;
 
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
-    Vector<double> cell_rhs(dofs_per_cell);
+    Vector<double>     cell_rhs(dofs_per_cell);
 
     // types::global_dof_index is an unsigned int of 32 bits on most systems.
     // So the following is an array of integers.
     std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
 
-    // Vector of vectors for storing the gradients of the displacement field at the
-    // integration points of the cell. The outer vector has length equal to the
-    // number of quadrature points in a cell. Each of the inner vectors is a
-    // list of dim elements of type Tensor<1, dim>.
-    std::vector<std::vector<Tensor<1, dim>>> solution_gradients(
-                                                quadrature_formula.size(),
-                                                std::vector<Tensor<1, dim>>(dim));
+    // Object for temporarily storing the quadrature point data while
+    // performing quadrature over the current cell
+    std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+
+    Tensor<2, dim> F; // Deformation gradient
+    SymmetricTensor<2, dim> S; // Second Piola-Kirchhoff stress
+    SymmetricTensor<4, dim> C; // Tangent modulus in the reference configuration
 
     // Loop over all the cells of the triangulation
     for (const auto &cell : dof_handler.active_cell_iterators()) {
@@ -258,12 +270,11 @@ void Problem<dim>::assemble_system () {
         // Initialize the fe_values object with values relevant to the current cell
         fe_values.reinit(cell);
 
-        // Get displacement gradients at all integration points of the cell from dealii
-        fe_values.get_function_gradients(solution, solution_gradients);
-
         // Initialize the cell matrix and the right hand side vector with zeros
         cell_matrix = 0; 
         cell_rhs = 0;
+
+        quadrature_point_history_data = quadrature_point_history.get_data(cell);
 
         for (unsigned int i = 0; i < dofs_per_cell; i++) {
 
@@ -281,19 +292,24 @@ void Problem<dim>::assemble_system () {
 
                 // Quadrature loop for current cell
                 for (unsigned int q = 0; q < n_quadrature_points; q++) {
+
+                    S = quadrature_point_history_data[q]->second_pk_stress;
+                    F = quadrature_point_history_data[q]->deformation_gradient;
+                    C = quadrature_point_history_data[q]->tangent_modulus;
+                                
                     for (unsigned int di = 0; di < dim; di++) {
                         for (unsigned int dj = 0; dj < dim; dj++) {
                             cell_matrix(i, j) +=
                                 fe_values.shape_grad(i, q)[di] *
-                                tangent_modulus[ci][di][cj][dj] *
+                                C[ci][di][cj][dj] *
                                 fe_values.shape_grad(j, q)[dj] *
                                 fe_values.JxW(q);
+
                         }
                     }
                 } // End of quadrature loop
             } // End of j loop
         } // End of i loop
-
 
         // Distribute local contributions to global system
         cell->get_dof_indices(local_dof_indices);
@@ -303,13 +319,6 @@ void Problem<dim>::assemble_system () {
                     local_dof_indices,
                     system_matrix,
                     system_rhs);
-
-        /*types::global_cell_index cell_id = cell->active_cell_index();*/
-        /*std::cout << "Cell id : " << cell_id + 1 << "\n";*/
-        /*for(auto id : local_dof_indices) */
-        /*    std::cout << id + 1 << " ";*/
-        /*std::cout << "\n";*/
-
     } // End of loop over all cells
 
     // Start applying boundary conditions
@@ -351,8 +360,6 @@ void Problem<dim>::assemble_system () {
                             boundary_values,
                             fe.component_mask(z_component));
 
-    std::cout << "Current time : " << current_time << std::endl;
-
     // The face opposite the xy plane has boundary indicator of 5. This is
     // where the velocity boundary condition must be applied.
     VectorTools::interpolate_boundary_values(
@@ -370,7 +377,6 @@ void Problem<dim>::assemble_system () {
                             system_rhs,
                             false);
 
-    std::cout << "\n-- Assembly complete" << std::endl;
 }
 
 template <int dim>
@@ -384,10 +390,88 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    std::cout << "\n-- " << solver_control.last_step()
-        << " iterations needed to obtain convergence."
-        << std::endl;
 }
+
+template <int dim>
+void Problem<dim>::update_quadrature_point_histories () {
+
+    // Vector of vectors for storing the gradients of the displacement field at the
+    // integration points of the cell. The outer vector has length equal to the
+    // number of quadrature points in a cell. Each of the inner vectors is a
+    // list of dim elements of type Tensor<1, dim>.
+    std::vector<std::vector<Tensor<1, dim>>> solution_gradients(
+                                                quadrature_formula.size(),
+                                                std::vector<Tensor<1, dim>>(dim));
+
+    Tensor<2, dim> 
+    dUdX, // Gradient of displacement wrt reference coordinates
+    F;    // Deformation gradient
+
+    SymmetricTensor<2, dim>
+    E, // Green Lagrange strain tensor
+    S; // Second Piola Kirchhoff stress
+
+    // Declare and compute the Kronecker delta tensor
+    Tensor<2, dim> kronecker_delta; 
+    kronecker_delta = 0;
+    kronecker_delta[0][0] = 1;
+    kronecker_delta[1][1] = 1;
+    kronecker_delta[2][2] = 1;
+
+    // Compute the Lamè parameters. Y and nu are in the parameters.h file.
+    double lambda = (Y * nu) / ((1 + nu) * (1 - 2 * nu));
+    double mu     = Y / (2 * (1 + nu));
+
+    // Calculate the tangent modulus for hyperelasticity
+    Tensor<4, dim> tangent_modulus;
+    for(unsigned int i = 0; i < dim; i++) {
+        for(unsigned int j = 0; j < dim; j++) {
+            for(unsigned int k = 0; k < dim; k++) {
+                for(unsigned int l = 0; l < dim; l++) {
+                    tangent_modulus[i][j][k][l] = 
+                        lambda * kronecker_delta[i][j] * kronecker_delta[k][l]
+                        +
+                        mu * (kronecker_delta[i][k] * kronecker_delta[j][l] +
+                              kronecker_delta[i][l] * kronecker_delta[j][k]);
+                }
+            }
+        }
+    }
+
+
+    std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+
+    for (auto &cell : dof_handler.active_cell_iterators()) {
+
+        // Initialize the fe_values object with values relevant to the current cell
+        fe_values.reinit(cell);
+
+        // Get displacement gradients at all integration points of the cell from dealii
+        fe_values.get_function_gradients(solution, solution_gradients);
+
+        quadrature_point_history_data = quadrature_point_history.get_data(cell);
+
+        for (unsigned int q = 0; q < quadrature_formula.size(); q++) {
+            for (unsigned int i = 0; i < dim; i++)
+                for (unsigned int j = 0; j < dim; j++)
+                    dUdX[i][j] = solution_gradients[q][i][j];
+
+            F = Physics::Elasticity::Kinematics::F(dUdX);
+            E = Physics::Elasticity::Kinematics::E(F);
+
+            S = 0;
+            for (unsigned int k = 0; k < 3; k++)
+                for (unsigned int l = 0; l < 3; l++)
+                    for (unsigned int m = 0; m < 3; m++)
+                        for (unsigned int n = 0; n < 3; n++)
+                            S[k][l] += tangent_modulus[k][l][m][n] * E[m][n];
+
+            quadrature_point_history_data[q]->second_pk_stress = S;
+            quadrature_point_history_data[q]->deformation_gradient = F;
+
+        }
+    }
+}    
 
 template <int dim>
 void Problem<dim>::output_results () {
