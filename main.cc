@@ -12,6 +12,9 @@
 #include <deal.II/physics/elasticity/kinematics.h>
 #include <deal.II/physics/elasticity/standard_tensors.h>
 
+// For pull back and push forward operations
+#include <deal.II/physics/transformations.h>
+
 // Linear algebra
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
@@ -264,6 +267,9 @@ void Problem<dim>::assemble_linear_system () {
     SymmetricTensor<2, dim> S; // Second Piola-Kirchhoff stress
     SymmetricTensor<4, dim> C; // Tangent modulus in the reference configuration
 
+    SymmetricTensor<2, dim> s; // Cauchy stress
+    SymmetricTensor<4, dim> c; // Tangent modulus in the spatial configuration
+
     // Loop over all the cells of the triangulation
     for (const auto &cell : dof_handler.active_cell_iterators()) {
 
@@ -274,6 +280,7 @@ void Problem<dim>::assemble_linear_system () {
         cell_matrix = 0; 
         cell_rhs = 0;
 
+        // Temporary structure for holding the quadrature point data
         quadrature_point_history_data = quadrature_point_history.get_data(cell);
 
         for (unsigned int i = 0; i < dofs_per_cell; i++) {
@@ -290,13 +297,16 @@ void Problem<dim>::assemble_linear_system () {
                                         .system_to_component_index(j)
                                         .first;
 
-                // Quadrature loop for current cell
+                // Quadrature loop for current cell and degrees of freedom i, j
                 for (unsigned int q = 0; q < n_quadrature_points; q++) {
 
                     S = quadrature_point_history_data[q]->second_pk_stress;
                     F = quadrature_point_history_data[q]->deformation_gradient;
                     C = quadrature_point_history_data[q]->tangent_modulus;
-                                
+
+                    s = Physics::Transformations::Contravariant::push_forward(S, F);
+                    c = Physics::Transformations::Contravariant::push_forward(C, F);
+
                     for (unsigned int di = 0; di < dim; di++) {
                         for (unsigned int dj = 0; dj < dim; dj++) {
                             cell_matrix(i, j) +=
@@ -411,34 +421,22 @@ void Problem<dim>::update_quadrature_point_histories () {
     E, // Green Lagrange strain tensor
     S; // Second Piola Kirchhoff stress
 
-    // Declare and compute the Kronecker delta tensor
-    Tensor<2, dim> kronecker_delta; 
-    kronecker_delta = 0;
-    kronecker_delta[0][0] = 1;
-    kronecker_delta[1][1] = 1;
-    kronecker_delta[2][2] = 1;
-
+    SymmetricTensor<4, dim> tangent_modulus;
     // Compute the Lamè parameters. Y and nu are in the parameters.h file.
     double lambda = (Y * nu) / ((1 + nu) * (1 - 2 * nu));
     double mu     = Y / (2 * (1 + nu));
 
     // Calculate the tangent modulus for hyperelasticity
-    Tensor<4, dim> tangent_modulus;
-    for(unsigned int i = 0; i < dim; i++) {
-        for(unsigned int j = 0; j < dim; j++) {
-            for(unsigned int k = 0; k < dim; k++) {
-                for(unsigned int l = 0; l < dim; l++) {
+    for (unsigned int i = 0; i < dim; ++i)
+        for (unsigned int j = 0; j < dim; ++j)
+            for (unsigned int k = 0; k < dim; ++k)
+                for (unsigned int l = 0; l < dim; ++l)
                     tangent_modulus[i][j][k][l] = 
-                        lambda * kronecker_delta[i][j] * kronecker_delta[k][l]
-                        +
-                        mu * (kronecker_delta[i][k] * kronecker_delta[j][l] +
-                              kronecker_delta[i][l] * kronecker_delta[j][k]);
-                }
-            }
-        }
-    }
+                          (((i == k) && (j == l) ? mu : 0.0) +
+                           ((i == l) && (j == k) ? mu : 0.0) +
+                           ((i == j) && (k == l) ? lambda : 0.0));
 
-
+    // Temporary structure for holding the quadrature point data
     std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
 
     for (auto &cell : dof_handler.active_cell_iterators()) {
