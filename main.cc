@@ -188,12 +188,14 @@ void Problem<dim>::run () {
               << system_rhs.l2_norm() 
               << "\n";
 
-    /*solve_linear_system();*/
+    solve_linear_system();
+
+    std::cout << "Solution after first step : \n" << solution << std::endl;
 
     /*update_quadrature_point_histories();*/
 
     /*assemble_linear_system();*/
-    /*output_results();*/
+    output_results();
 
 }
 
@@ -524,7 +526,7 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    /*constraints.distribute(solution);*/
+    constraints.distribute(solution);
 
 }
 
