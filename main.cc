@@ -110,6 +110,7 @@ class Problem {
         void setup_system();
         void apply_boundary_conditions();
         void assemble_linear_system();
+        void calculate_error_residual();
         void solve_linear_system();
         void update_quadrature_point_histories();
         void output_results();
@@ -127,6 +128,7 @@ class Problem {
         quadrature_point_history;
 
         // Time stepping
+        double residual_norm;
         double current_time;
         double delta_t;
         double total_time;
@@ -179,6 +181,7 @@ void Problem<dim>::run () {
               << "\n";
 
     apply_boundary_conditions();
+    
     assemble_linear_system();
 
     std::cout << "After first assembly \n";
@@ -368,8 +371,6 @@ void Problem<dim>::assemble_linear_system () {
 
     SymmetricTensor<2, dim> delta = Physics::Elasticity::StandardTensors<dim>::I;
 
-    double J; // Determinant of the deformation gradient and the volume strain
-
     // Loop over all the cells of the triangulation
     for (const auto &cell : dof_handler.active_cell_iterators()) {
 
@@ -407,8 +408,6 @@ void Problem<dim>::assemble_linear_system () {
                     s = Physics::Transformations::Contravariant::push_forward(S, F);
                     c = Physics::Transformations::Contravariant::push_forward(C, F);
 
-                    J = determinant(F); 
-
                     Finv = invert(F);
 
                     // Create rank 1 tensors to hold the gradients of the shape
@@ -429,18 +428,18 @@ void Problem<dim>::assemble_linear_system () {
 
                     for (unsigned int di = 0; di < dim; di++) {
                         cell_rhs(i) +=
-                             -dphidx_i[di] * s[ci][di] * J * fe_values.JxW(q);
+                             -dphidx_i[di] * s[ci][di] * fe_values.JxW(q);
                         for (unsigned int dj = 0; dj < dim; dj++) {
                             cell_matrix(i, j) +=
                                 dphidx_i[di] *
                                 c[ci][di][cj][dj] *
                                 dphidx_j[dj] *
-                                J * fe_values.JxW(q)
+                                fe_values.JxW(q)
                                 +
                                 dphidx_i[di] *
                                 delta[ci][cj] * s[di][dj] *
                                 dphidx_j[dj] *
-                                J * fe_values.JxW(q);
+                                fe_values.JxW(q);
                         }
                     }
                 } // End of quadrature loop
@@ -456,62 +455,6 @@ void Problem<dim>::assemble_linear_system () {
                     system_matrix,
                     system_rhs);
     } // End of loop over all cells
-
-    /*// Start applying boundary conditions*/
-    /**/
-    /*// Create an object that will hold the values of the boundary conditions*/
-    /*std::map<types::global_dof_index, double> boundary_values;*/
-    /**/
-    /*// The following are three arrays of boolean values that tell the*/
-    /*// interpolate_boundary_values function which component to apply the*/
-    /*// boundary values to.*/
-    /*const FEValuesExtractors::Scalar x_component(0);*/
-    /*const FEValuesExtractors::Scalar y_component(1);*/
-    /*const FEValuesExtractors::Scalar z_component(2);*/
-    /**/
-    /*// The face on the yz plane has boundary indicator of 0 and must be kept*/
-    /*// from moving in the x direction*/
-    /*VectorTools::interpolate_boundary_values(*/
-    /*                        dof_handler,*/
-    /*                        0,*/
-    /*                        Functions::ZeroFunction<dim>(dim),*/
-    /*                        boundary_values,*/
-    /*                        fe.component_mask(x_component));*/
-    /**/
-    /*// The face on the xz plane has boundary indicator of 2 and must be kept*/
-    /*// from moving in the y direction*/
-    /*VectorTools::interpolate_boundary_values(*/
-    /*                        dof_handler,*/
-    /*                        2,*/
-    /*                        Functions::ZeroFunction<dim>(dim),*/
-    /*                        boundary_values,*/
-    /*                        fe.component_mask(y_component));*/
-    /**/
-    /*// The face on the xy plane has boundary indicator of 4 and must be kept*/
-    /*// from moving in the z direction*/
-    /*VectorTools::interpolate_boundary_values(*/
-    /*                        dof_handler,*/
-    /*                        4,*/
-    /*                        Functions::ZeroFunction<dim>(dim),*/
-    /*                        boundary_values,*/
-    /*                        fe.component_mask(z_component));*/
-    /**/
-    /*// The face opposite the xy plane has boundary indicator of 5. This is*/
-    /*// where the velocity boundary condition must be applied.*/
-    /*VectorTools::interpolate_boundary_values(*/
-    /*                        dof_handler,*/
-    /*                        5,*/
-    /*                        VelocityBoundaryCondition<dim>(current_time, z1_speed),*/
-    /*                        boundary_values,*/
-    /*                        fe.component_mask(z_component));*/
-    /**/
-    /*// Apply the boundary values created above*/
-    /*MatrixTools::apply_boundary_values(*/
-    /*                        boundary_values,*/
-    /*                        system_matrix,*/
-    /*                        solution,*/
-    /*                        system_rhs,*/
-    /*                        false);*/
 
 }
 
