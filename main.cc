@@ -189,7 +189,8 @@ void Problem<dim>::run () {
 
     iterations = 0;
 
-    // Generate boundary conditions for the current increment
+    // Generate homogenous and non homogenous boundary conditions for the
+    // current increment
     generate_boundary_conditions();
 
     // Calculations of the zeroth iteration of the increment are used to set
@@ -199,7 +200,7 @@ void Problem<dim>::run () {
     assemble_linear_system();
     calculate_residual_norm();
     initial_residual_norm = residual_norm;
-    std::cout << "Residual norm : " << residual_norm << "\n";
+    std::cout << "Initial norm : " << residual_norm << "\n";
     solve_linear_system();
     update_quadrature_point_histories();
     iterations++;
@@ -209,9 +210,10 @@ void Problem<dim>::run () {
 
         assemble_linear_system();
         calculate_residual_norm();
+
         std::cout << "Residual norm : " << residual_norm << "\n";
 
-        if (residual_norm < 1e-6 * initial_residual_norm) {
+        if (residual_norm < 1e-3 * initial_residual_norm) {
             std::cout 
                 << "Increment converged in " 
                 << iterations 
@@ -231,7 +233,7 @@ void Problem<dim>::run () {
         }
     }
 
-    /*output_results();*/
+    output_results();
 
 }
 
@@ -241,7 +243,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    /*triangulation.refine_global(1);*/
+    triangulation.refine_global(2);
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -249,7 +251,8 @@ void Problem<dim>::setup_system () {
                                         triangulation.end(),
                                         quadrature_formula.size());
 
-    // Generate linear algebra objets
+    // Set the sizes of the linear algebra objects
+    residual.reinit(dof_handler.n_dofs());
     delta_solution.reinit(dof_handler.n_dofs());
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
@@ -518,8 +521,8 @@ void Problem<dim>::assemble_linear_system () {
             } // End of i loop
         } // End of quadrature loop
 
-        std::cout << "Iterations : " << iterations << "\n";
-        std::cout << "cell rhs : " << cell_rhs << "\n";
+        /*std::cout << "Iterations : " << iterations << "\n";*/
+        /*std::cout << "cell rhs : " << cell_rhs << "\n";*/
 
         // Distribute local contributions to global system
         cell->get_dof_indices(local_dof_indices);
@@ -547,7 +550,7 @@ void Problem<dim>::assemble_linear_system () {
 
         }
 
-        std::cout << "system rhs : " << system_rhs << "\n";
+        /*std::cout << "system rhs : " << system_rhs << "\n";*/
 
         /*if (true) {*/
         /*std::cout << "iterations : " << iterations << "\n";*/
@@ -562,7 +565,7 @@ void Problem<dim>::assemble_linear_system () {
 template <int dim>
 void Problem<dim>::calculate_residual_norm () {
 
-    residual.reinit(dof_handler.n_dofs());
+    residual = 0.0;
 
     for (unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
         if (!homogenous_constraints.is_constrained(i))
@@ -681,8 +684,13 @@ void Problem<dim>::update_quadrature_point_histories () {
 
 template <int dim>
 void Problem<dim>::output_results () {
+
+    std::string output_file_name = "solution_frame_" 
+                                 + std::to_string(step_number)
+                                 + ".vtu";
     
-    std::ofstream output_file("solution.vtu");
+    std::ofstream output_file(output_file_name);
+    /*std::ofstream output_file("solution.vtu");*/
     
     data_out.attach_dof_handler(dof_handler);
 
