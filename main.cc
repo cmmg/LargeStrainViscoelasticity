@@ -130,12 +130,14 @@ class Problem {
         quadrature_point_history;
 
         // Time stepping
+        double initial_residual_norm;
         double residual_norm;
         double current_time;
         double delta_t;
         double total_time;
         int step_number;
         int iterations;
+        int max_no_of_iterations;
 
         // Linear algebra
         Vector<double> system_rhs;
@@ -167,6 +169,7 @@ Problem<dim>::Problem () :
     delta_t(1e-3),
     total_time(2e-3),
     step_number(0),
+    max_no_of_iterations(100),
     text_output_file("text_output_file.txt")
     {}
 
@@ -189,28 +192,40 @@ void Problem<dim>::run () {
     // Generate boundary conditions for the current increment
     generate_boundary_conditions();
 
-    double initial_residual_norm;
+    // Calculations of the zeroth iteration of the increment are used to set
+    // the initial norm of the residual to be used for the convergence
+    // criterion.
+
+    assemble_linear_system();
+    calculate_residual_norm();
+    initial_residual_norm = residual_norm;
+    std::cout << "Residual norm : " << residual_norm << "\n";
+    solve_linear_system();
+    update_quadrature_point_histories();
+    iterations++;
 
     // Solve the current, nonlinear increment
     while (true) {
-        std::cout << "\n";
-        iterations++;
+
         assemble_linear_system();
         calculate_residual_norm();
-        if (iterations == 1) {
-            initial_residual_norm = residual_norm;
-        } else if (residual_norm < 1e6 * initial_residual_norm) {
-            std::cout << "Increment converged.\n";
+        std::cout << "Residual norm : " << residual_norm << "\n";
+
+        if (residual_norm < 1e-6 * initial_residual_norm) {
+            std::cout 
+                << "Increment converged in " 
+                << iterations 
+                << " iteration(s)." 
+                << std::endl;;
+
             break;
         }
 
-        std::cout << "Residual norm : " << residual_norm << "\n";
-        /*std::cout << "System RHS : " << system_rhs << "\n";*/
         solve_linear_system();
-        /*std::cout << "Solution : " << solution << "\n";*/
         update_quadrature_point_histories();
+        iterations++;
 
-        if (iterations == 4) {
+        if (iterations == max_no_of_iterations) {
             std::cout << "Max iterations reached.\n";
             exit(0);
         }
@@ -509,7 +524,7 @@ void Problem<dim>::assemble_linear_system () {
         // Distribute local contributions to global system
         cell->get_dof_indices(local_dof_indices);
 
-        if (iterations == 1) {
+        if (iterations == 0) {
             // Apply non-homogenous boundary conditions only in the first
             // iteration of the increment.
             non_homogenous_constraints.distribute_local_to_global(
@@ -571,7 +586,7 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    if (iterations == 1) {
+    if (iterations == 0) {
         non_homogenous_constraints.distribute(delta_solution);
     } else {
         homogenous_constraints.distribute(delta_solution);
