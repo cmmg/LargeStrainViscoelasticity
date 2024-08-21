@@ -449,6 +449,18 @@ void Problem<dim>::assemble_linear_system () {
                                         .system_to_component_index(i)
                                         .first;
 
+                dphidx_i = 0.0; 
+
+                // Transform the gradients of the shape functions returned
+                // by dealii to the current configuration
+                for (unsigned int m = 0; m < dim; m++)
+                    for (unsigned int n = 0; n < dim; n++)
+                        dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
+
+                for (unsigned int di = 0; di < dim; di++)
+                    cell_rhs(i) +=
+                         -dphidx_i[di] * Js[ci][di] * fe_values.JxW(q);
+
                 for (unsigned int j = 0; j < dofs_per_cell; j++) {
 
                     const unsigned int cj = fe_values
@@ -456,21 +468,15 @@ void Problem<dim>::assemble_linear_system () {
                                             .system_to_component_index(j)
                                             .first;
 
-                    dphidx_i = 0.0; 
                     dphidx_j = 0.0; 
 
                     // Transform the gradients of the shape functions returned
                     // by dealii to the current configuration
-                    for (unsigned int m = 0; m < dim; m++) {
-                        for (unsigned int n = 0; n < dim; n++) {
-                            dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
+                    for (unsigned int m = 0; m < dim; m++)
+                        for (unsigned int n = 0; n < dim; n++)
                             dphidx_j[m] += fe_values.shape_grad(j, q)[n] * Finv[n][m];
-                        }
-                    }
 
                     for (unsigned int di = 0; di < dim; di++) {
-                        cell_rhs(i) +=
-                             -dphidx_i[di] * Js[ci][di] * fe_values.JxW(q);
                         for (unsigned int dj = 0; dj < dim; dj++) {
                             cell_matrix(i, j) +=
                                 dphidx_i[di] *
