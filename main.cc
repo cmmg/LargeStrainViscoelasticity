@@ -114,7 +114,7 @@ class Problem {
         void assemble_linear_system();
         void calculate_residual_norm();
         void solve_linear_system();
-        void update_quadrature_point_histories();
+        void update_quadrature_point_data();
         void output_results();
 
     private: // variables
@@ -132,6 +132,7 @@ class Problem {
         // Time stepping
         double initial_residual_norm;
         double residual_norm;
+        double relative_tolerance;
         double current_time;
         double delta_t;
         double total_time;
@@ -149,8 +150,8 @@ class Problem {
                                       homogenous_constraints;
 
         // Output
-        std::ofstream text_output_file;
-        DataOut<dim> data_out;
+        /*std::ofstream text_output_file;*/
+        /*DataOut<dim> data_out;*/
 };
 
 template <int dim>
@@ -165,12 +166,13 @@ Problem<dim>::Problem () :
             update_quadrature_points |
             update_gradients |
             update_JxW_values),
+    relative_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
-    total_time(2e-3),
+    total_time(0.25),
     step_number(0),
-    max_no_of_iterations(100),
-    text_output_file("text_output_file.txt")
+    max_no_of_iterations(100)
+    /*text_output_file("text_output_file.txt")*/
     {}
 
 template <int dim>
@@ -178,6 +180,7 @@ void Problem<dim>::run () {
 
     setup_system();
 
+    while (current_time < total_time) {
     current_time += delta_t; 
     step_number++;
 
@@ -202,7 +205,7 @@ void Problem<dim>::run () {
     initial_residual_norm = residual_norm;
     std::cout << "Initial norm : " << residual_norm << "\n";
     solve_linear_system();
-    update_quadrature_point_histories();
+    update_quadrature_point_data();
     iterations++;
 
     // Solve the current, nonlinear increment
@@ -211,11 +214,20 @@ void Problem<dim>::run () {
         assemble_linear_system();
         calculate_residual_norm();
 
-        std::cout << "Residual norm : " << residual_norm << "\n";
+        std::cout 
+            << "Iteration : " << iterations << " "
+            << "Residual norm : " << residual_norm 
+            << "\n";
 
-        if (residual_norm < 1e-3 * initial_residual_norm) {
+        if (iterations == max_no_of_iterations) {
+            std::cout << "Max iterations reached. Ending program.\n";
+            exit(0);
+        }
+        if (residual_norm / initial_residual_norm < relative_tolerance
+            or
+            residual_norm < 1e-12) {
             std::cout 
-                << "Increment converged in " 
+                << "Step converged in " 
                 << iterations 
                 << " iteration(s)." 
                 << std::endl;;
@@ -224,16 +236,14 @@ void Problem<dim>::run () {
         }
 
         solve_linear_system();
-        update_quadrature_point_histories();
+        update_quadrature_point_data();
         iterations++;
 
-        if (iterations == max_no_of_iterations) {
-            std::cout << "Max iterations reached.\n";
-            exit(0);
-        }
     }
 
     output_results();
+
+    }
 
 }
 
@@ -243,7 +253,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(2);
+    /*triangulation.refine_global(1);*/
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -582,12 +592,16 @@ void Problem<dim>::solve_linear_system () {
     delta_solution = 0.0;
 
     // The solver will do a maximum of 1000 iterations before giving up
-    SolverControl solver_control(1000, 1e-6);
+    SolverControl solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver_cg(solver_control);
     solver_cg.solve(system_matrix,
                     delta_solution,
                     system_rhs,
                     IdentityMatrix(solution.size()));
+
+    /*std::cout << "iterations : " << iterations << "\n";*/
+    /*std::cout << "system rhs : " << system_rhs << "\n";*/
+    /*std::cout << "delta solution : " << delta_solution << "\n";*/
 
     if (iterations == 0) {
         non_homogenous_constraints.distribute(delta_solution);
@@ -595,7 +609,7 @@ void Problem<dim>::solve_linear_system () {
         homogenous_constraints.distribute(delta_solution);
     } 
 
-    /*std::cout << "iterations : " << iterations << "\n";*/
+    /*std::cout << "system rhs : " << system_rhs << "\n";*/
     /*std::cout << "delta solution : " << delta_solution << "\n";*/
 
     solution += delta_solution;
@@ -603,7 +617,7 @@ void Problem<dim>::solve_linear_system () {
 }
 
 template <int dim>
-void Problem<dim>::update_quadrature_point_histories () {
+void Problem<dim>::update_quadrature_point_data () {
 
     // Vector of vectors for storing the gradients of the displacement field at the
     // integration points of a cell. The outer vector has length equal to the
@@ -685,24 +699,26 @@ void Problem<dim>::update_quadrature_point_histories () {
 template <int dim>
 void Problem<dim>::output_results () {
 
-    std::string output_file_name = "solution_frame_" 
-                                 + std::to_string(step_number)
-                                 + ".vtu";
-    
-    std::ofstream output_file(output_file_name);
-    /*std::ofstream output_file("solution.vtu");*/
-    
-    data_out.attach_dof_handler(dof_handler);
-
     std::vector<std::string> solution_names;
 
     solution_names.emplace_back("x_displacement");
     solution_names.emplace_back("y_displacement");
     solution_names.emplace_back("z_displacement");
 
+    DataOut<dim> data_out;
+    data_out.attach_dof_handler(dof_handler);
+
     data_out.add_data_vector(solution, solution_names);
 
     data_out.build_patches();;
+
+    std::string output_file_name = 
+            "/home/skunda/hyperelasticity/solution/solution-" 
+            + std::to_string(step_number)
+            + ".vtu";
+
+    std::ofstream output_file(output_file_name);
+
     data_out.write_vtu (output_file);
 
     std::cout << "\nResults written" << std::endl;
