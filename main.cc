@@ -189,12 +189,21 @@ void Problem<dim>::run () {
     // Generate boundary conditions for the current increment
     generate_boundary_conditions();
 
+    double initial_residual_norm;
+
     // Solve the current, nonlinear increment
     while (true) {
         std::cout << "\n";
         iterations++;
         assemble_linear_system();
         calculate_residual_norm();
+        if (iterations == 1) {
+            initial_residual_norm = residual_norm;
+        } else if (residual_norm < 1e6 * initial_residual_norm) {
+            std::cout << "Increment converged.\n";
+            break;
+        }
+
         std::cout << "Residual norm : " << residual_norm << "\n";
         /*std::cout << "System RHS : " << system_rhs << "\n";*/
         solve_linear_system();
