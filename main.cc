@@ -28,6 +28,7 @@
 
 // Graphical output
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/fe/mapping_q_eulerian.h>
 
 #include <iostream>
 
@@ -699,18 +700,31 @@ void Problem<dim>::update_quadrature_point_data () {
 template <int dim>
 void Problem<dim>::output_results () {
 
-    std::vector<std::string> solution_names;
+    /*std::vector<std::string> solution_names;*/
+    /**/
+    /*solution_names.emplace_back("x_displacement");*/
+    /*solution_names.emplace_back("y_displacement");*/
+    /*solution_names.emplace_back("z_displacement");*/
 
-    solution_names.emplace_back("x_displacement");
-    solution_names.emplace_back("y_displacement");
-    solution_names.emplace_back("z_displacement");
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
+    data_component_interpretation(
+    dim, DataComponentInterpretation::component_is_part_of_vector);
+
+    std::vector<std::string> solution_name(dim, "displacement");
 
     DataOut<dim> data_out;
     data_out.attach_dof_handler(dof_handler);
+    data_out.add_data_vector(solution, 
+                             solution_name,
+                             DataOut<dim>::type_dof_data,
+                             data_component_interpretation);
 
-    data_out.add_data_vector(solution, solution_names);
+    Vector<double> soln(solution.size());
+    for (unsigned int i = 0; i < soln.size(); ++i)
+        soln(i) = solution(i);
+    const MappingQEulerian<dim> q_mapping(1, dof_handler, soln);
 
-    data_out.build_patches();;
+    data_out.build_patches(q_mapping, 1);;
 
     std::string output_file_name = 
             "/home/skunda/hyperelasticity/solution/solution-" 
