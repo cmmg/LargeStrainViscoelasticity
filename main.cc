@@ -182,67 +182,75 @@ void Problem<dim>::run () {
     setup_system();
 
     while (current_time < total_time) {
-    current_time += delta_t; 
-    step_number++;
 
-    std::cout << "\n"
-              << "Step number : " << step_number
-              << " "
-              << "Current time : " << current_time
-              << "\n";
+        current_time += delta_t; 
+        step_number++;
 
-    iterations = 0;
+        std::cout << "\n"
+                  << "Step number : " << step_number
+                  << " "
+                  << "Current time : " << current_time
+                  << "\n";
 
-    // Generate homogenous and non homogenous boundary conditions for the
-    // current increment
-    generate_boundary_conditions();
+        iterations = 0;
 
-    // Calculations of the zeroth iteration of the increment are used to set
-    // the initial norm of the residual to be used for the convergence
-    // criterion.
+        // Generate homogenous and non homogenous boundary conditions for the
+        // current increment
+        generate_boundary_conditions();
 
-    assemble_linear_system();
-    calculate_residual_norm();
-    initial_residual_norm = residual_norm;
-    std::cout << "Initial norm : " << residual_norm << "\n";
-    solve_linear_system();
-    update_quadrature_point_data();
-    iterations++;
+        // Calculations of the zeroth iteration of the increment are used to set
+        // the initial norm of the residual to be used for the convergence
+        // criterion.
 
-    // Solve the current, nonlinear increment
-    while (true) {
+        solution = 0.0;
 
         assemble_linear_system();
         calculate_residual_norm();
-
-        std::cout 
-            << "Iteration : " << iterations << " "
-            << "Residual norm : " << residual_norm 
-            << "\n";
-
-        if (iterations == max_no_of_iterations) {
-            std::cout << "Max iterations reached. Ending program.\n";
-            exit(0);
-        }
-        if (residual_norm / initial_residual_norm < relative_tolerance
-            or
-            residual_norm < 1e-12) {
-            std::cout 
-                << "Step converged in " 
-                << iterations 
-                << " iteration(s)." 
-                << std::endl;;
-
-            break;
-        }
-
+        initial_residual_norm = residual_norm;
+        std::cout << "Initial norm : " << residual_norm << "\n";
         solve_linear_system();
         update_quadrature_point_data();
         iterations++;
 
-    }
+        // Solve the current, nonlinear increment
+        while (true) {
 
-    output_results();
+            assemble_linear_system();
+            calculate_residual_norm();
+
+            std::cout 
+                << "Iteration : " << iterations << " "
+                << "Residual norm : " << residual_norm 
+                << "\n";
+
+            if (iterations == max_no_of_iterations) {
+                std::cout << "Max iterations reached. Ending program.\n";
+                exit(0);
+            }
+            if (residual_norm / initial_residual_norm < relative_tolerance
+                or
+                residual_norm < 1e-12) {
+                std::cout 
+                    << "Step converged in " 
+                    << iterations 
+                    << " iteration(s)." 
+                    << std::endl;;
+
+                break;
+            }
+
+            solve_linear_system();
+
+            std::cout << "Corner x displacement : " << solution[21] << "\n";
+            std::cout << "Corner y displacement : " << solution[22] << "\n";
+            std::cout << "Corner z displacement : " << solution[23] << "\n";
+
+            update_quadrature_point_data();
+            iterations++;
+
+        }
+
+        output_results();
 
     }
 
@@ -700,12 +708,6 @@ void Problem<dim>::update_quadrature_point_data () {
 template <int dim>
 void Problem<dim>::output_results () {
 
-    /*std::vector<std::string> solution_names;*/
-    /**/
-    /*solution_names.emplace_back("x_displacement");*/
-    /*solution_names.emplace_back("y_displacement");*/
-    /*solution_names.emplace_back("z_displacement");*/
-
     std::vector<DataComponentInterpretation::DataComponentInterpretation>
     data_component_interpretation(
     dim, DataComponentInterpretation::component_is_part_of_vector);
@@ -714,17 +716,15 @@ void Problem<dim>::output_results () {
 
     DataOut<dim> data_out;
     data_out.attach_dof_handler(dof_handler);
+
     data_out.add_data_vector(solution, 
                              solution_name,
                              DataOut<dim>::type_dof_data,
                              data_component_interpretation);
 
-    Vector<double> soln(solution.size());
-    for (unsigned int i = 0; i < soln.size(); ++i)
-        soln(i) = solution(i);
-    const MappingQEulerian<dim> q_mapping(1, dof_handler, soln);
+    const MappingQEulerian<dim> q_mapping(fe.degree, dof_handler, solution);
 
-    data_out.build_patches(q_mapping, 1);;
+    data_out.build_patches(q_mapping, fe.degree);;
 
     std::string output_file_name = 
             "/home/skunda/hyperelasticity/solution/solution-" 
