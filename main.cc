@@ -154,7 +154,7 @@ class Problem {
 
         // Output
         /*std::ofstream text_output_file;*/
-        /*DataOut<dim> data_out;*/
+        DataOut<dim> data_out;
 };
 
 template <int dim>
@@ -714,7 +714,8 @@ void Problem<dim>::output_results () {
 
     std::vector<std::string> solution_name(dim, "displacement");
 
-    DataOut<dim> data_out;
+    data_out.clear_data_vectors();
+
     data_out.attach_dof_handler(dof_handler);
 
     data_out.add_data_vector(solution, 
