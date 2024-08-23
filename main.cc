@@ -42,7 +42,7 @@ class PointHistory {
     public:
         PointHistory() {
 
-            second_pk_stress = 0;
+            kirchhoff_stress = 0;
             deformation_gradient = Physics::Elasticity::StandardTensors<dim>::I;
 
             // Compute the Lamè parameters. Y and nu are in the parameters.h file.
@@ -63,7 +63,7 @@ class PointHistory {
 
         virtual ~PointHistory() = default;
         Tensor<2, dim> deformation_gradient;
-        SymmetricTensor<2, dim> second_pk_stress;
+        SymmetricTensor<2, dim> kirchhoff_stress;
         SymmetricTensor<4, dim> tangent_modulus;
 };
 
@@ -243,9 +243,9 @@ void Problem<dim>::run () {
 
             solve_linear_system();
 
-            std::cout << "Corner x displacement : " << solution[21] << "\n";
-            std::cout << "Corner y displacement : " << solution[22] << "\n";
-            std::cout << "Corner z displacement : " << solution[23] << "\n";
+            /*std::cout << "Corner x displacement : " << solution[21] << "\n";*/
+            /*std::cout << "Corner y displacement : " << solution[22] << "\n";*/
+            /*std::cout << "Corner z displacement : " << solution[23] << "\n";*/
 
             update_quadrature_point_data();
             iterations++;
@@ -279,7 +279,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    /*triangulation.refine_global(1);*/
+    triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -457,8 +457,8 @@ void Problem<dim>::assemble_linear_system () {
     Tensor<2, dim> F;    // Deformation gradient
     Tensor<2, dim> Finv; // Inverse of the deformation gradient
 
-    SymmetricTensor<2, dim> S; // Second Piola-Kirchhoff stress
-    SymmetricTensor<4, dim> C; // Tangent modulus in the reference configuration
+    /*SymmetricTensor<2, dim> S; // Second Piola-Kirchhoff stress*/
+    /*SymmetricTensor<4, dim> C; // Tangent modulus in the reference configuration*/
 
     SymmetricTensor<2, dim> Js; // Kirchhoff stress
     SymmetricTensor<4, dim> Jc; // Spatial tangent modulus * determinant(F)
@@ -483,29 +483,18 @@ void Problem<dim>::assemble_linear_system () {
         quadrature_point_history_data = quadrature_point_history.get_data(cell);
 
         // Quadrature loop for current cell and degrees of freedom i, j
-        for (unsigned int q = 0; q < n_quadrature_points; q++) {
+        for (unsigned int q = 0; q < n_quadrature_points; ++q) {
 
-            S = quadrature_point_history_data[q]->second_pk_stress;
             F = quadrature_point_history_data[q]->deformation_gradient;
-            C = quadrature_point_history_data[q]->tangent_modulus;
+            Js = quadrature_point_history_data[q]->kirchhoff_stress;
+            Jc = quadrature_point_history_data[q]->tangent_modulus;
 
-            Js = Physics::Transformations::Contravariant::push_forward(S, F);
-            Jc = Physics::Transformations::Contravariant::push_forward(C, F);
+            /*Js = Physics::Transformations::Contravariant::push_forward(S, F);*/
+            /*Jc = Physics::Transformations::Contravariant::push_forward(C, F);*/
 
             Finv = invert(F);
 
-            /*if (iterations == 2) {*/
-            /*    std::cout << "Quadrature point : " << q + 1 << "\n";*/
-            /*    std::cout << "2nd PK : " << S << "\n";*/
-            /*    std::cout << "Cauchy stress : " << s / determinant(F) << "\n";*/
-            /*    std::cout << "Deformation gradient : " << F << "\n";*/
-            /*    std::cout */
-            /*        << "Green Lagrange strain : " */
-            /*        << Physics::Elasticity::Kinematics::E(F) */
-            /*        << "\n";*/
-            /*}*/
-
-            for (unsigned int i = 0; i < dofs_per_cell; i++) {
+            for (unsigned int i = 0; i < dofs_per_cell; ++i) {
 
                 const unsigned int ci = fe_values
                                         .get_fe()
@@ -516,15 +505,15 @@ void Problem<dim>::assemble_linear_system () {
 
                 // Transform the gradients of the shape functions returned
                 // by dealii to the current configuration
-                for (unsigned int m = 0; m < dim; m++)
-                    for (unsigned int n = 0; n < dim; n++)
+                for (unsigned int m = 0; m < dim; ++m)
+                    for (unsigned int n = 0; n < dim; ++n)
                         dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
 
-                for (unsigned int di = 0; di < dim; di++)
+                for (unsigned int di = 0; di < dim; ++di)
                     cell_rhs(i) +=
                          -dphidx_i[di] * Js[ci][di] * fe_values.JxW(q);
 
-                for (unsigned int j = 0; j < dofs_per_cell; j++) {
+                for (unsigned int j = 0; j < dofs_per_cell; ++j) {
 
                     const unsigned int cj = fe_values
                                             .get_fe()
@@ -535,12 +524,12 @@ void Problem<dim>::assemble_linear_system () {
 
                     // Transform the gradients of the shape functions returned
                     // by dealii to the current configuration
-                    for (unsigned int m = 0; m < dim; m++)
-                        for (unsigned int n = 0; n < dim; n++)
+                    for (unsigned int m = 0; m < dim; ++m)
+                        for (unsigned int n = 0; n < dim; ++n)
                             dphidx_j[m] += fe_values.shape_grad(j, q)[n] * Finv[n][m];
 
-                    for (unsigned int di = 0; di < dim; di++) {
-                        for (unsigned int dj = 0; dj < dim; dj++) {
+                    for (unsigned int di = 0; di < dim; ++di) {
+                        for (unsigned int dj = 0; dj < dim; ++dj) {
                             cell_matrix(i, j) +=
                                 dphidx_i[di] *
                                 Jc[ci][di][cj][dj] *
@@ -603,7 +592,7 @@ void Problem<dim>::calculate_residual_norm () {
 
     residual = 0.0;
 
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); i++) {
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); ++i) {
         if (!homogenous_constraints.is_constrained(i))
             residual(i) = system_rhs(i);
     }
@@ -677,6 +666,9 @@ void Problem<dim>::update_quadrature_point_data () {
                            ((i == l) && (j == k) ? mu : 0.0) +
                            ((i == j) && (k == l) ? lambda : 0.0));
 
+    SymmetricTensor<2, dim> Js; // Kirchhoff stress
+    SymmetricTensor<4, dim> Jc; // Spatial tangent modulus * determinant(F)
+
     // Temporary structure for holding the quadrature point data
     std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
 
@@ -691,10 +683,10 @@ void Problem<dim>::update_quadrature_point_data () {
 
         quadrature_point_history_data = quadrature_point_history.get_data(cell);
 
-        for (unsigned int q = 0; q < quadrature_formula.size(); q++) {
+        for (unsigned int q = 0; q < quadrature_formula.size(); ++q) {
 
-            for (unsigned int i = 0; i < dim; i++)
-                for (unsigned int j = 0; j < dim; j++)
+            for (unsigned int i = 0; i < dim; ++i)
+                for (unsigned int j = 0; j < dim; ++j)
                     dUdX[i][j] = solution_gradients[q][i][j];
 
             F = Physics::Elasticity::Kinematics::F(dUdX);
@@ -702,21 +694,12 @@ void Problem<dim>::update_quadrature_point_data () {
 
             S = C * E;
 
-            /*if (q == 0 and iterations == 1) {*/
-            /*    std::cout << "S11 = " << S[0][0] << "\n";*/
-            /*    std::cout << "C1111 * E11 = " << C[0][0][0][0] << " * " << E[0][0] << " = " << C[0][0][0][0] * E[0][0] << "\n";*/
-            /*    std::cout << "C1112 * E12 = " << C[0][0][0][1] << " * " << E[0][1] << " = " << C[0][0][0][1] * E[0][1] << "\n";*/
-            /*    std::cout << "C1113 * E13 = " << C[0][0][0][2] << " * " << E[0][2] << " = " << C[0][0][0][2] * E[0][2] << "\n";*/
-            /*    std::cout << "C1121 * E21 = " << C[0][0][1][0] << " * " << E[1][0] << " = " << C[0][0][1][0] * E[1][0] << "\n";*/
-            /*    std::cout << "C1122 * E22 = " << C[0][0][1][1] << " * " << E[1][1] << " = " << C[0][0][1][1] * E[1][1] << "\n";*/
-            /*    std::cout << "C1123 * E23 = " << C[0][0][1][2] << " * " << E[1][2] << " = " << C[0][0][1][2] * E[1][2] << "\n";*/
-            /*    std::cout << "C1131 * E31 = " << C[0][0][2][0] << " * " << E[2][0] << " = " << C[0][0][2][0] * E[2][0] << "\n";*/
-            /*    std::cout << "C1132 * E32 = " << C[0][0][2][1] << " * " << E[2][1] << " = " << C[0][0][2][1] * E[2][1] << "\n";*/
-            /*    std::cout << "C1133 * E33 = " << C[0][0][2][2] << " * " << E[2][2] << " = " << C[0][0][2][2] * E[2][2] << "\n";*/
-            /*}*/
+            Js = Physics::Transformations::Contravariant::push_forward(S, F);
+            Jc = Physics::Transformations::Contravariant::push_forward(C, F);
 
-            quadrature_point_history_data[q]->second_pk_stress = S;
             quadrature_point_history_data[q]->deformation_gradient = F;
+            quadrature_point_history_data[q]->kirchhoff_stress = Js;
+            quadrature_point_history_data[q]->tangent_modulus = Jc;
 
         }
     }
