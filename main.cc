@@ -117,6 +117,7 @@ class Problem {
         void calculate_residual_norm();
         void solve_linear_system();
         void update_quadrature_point_data();
+        void perform_L2_projections();
         void output_results();
         void queries();
 
@@ -127,6 +128,15 @@ class Problem {
         FESystem<dim> fe;
         QGauss<dim> quadrature_formula;
         FEValues<dim> fe_values;
+
+        // L2 projection
+        DoFHandler<dim> dof_handler_L2;
+        FESystem<dim> fe_L2;
+        FEValues<dim> fe_values_L2;
+        AffineConstraints<double> constraints_L2;
+        SparsityPattern sparsity_pattern_L2;
+        SparseMatrix<double> mass_matrix_L2;
+        std::vector<Vector<double>> nodal_output_L2;
 
         // History data at quadrature points
         CellDataStorage<typename Triangulation<dim>::cell_iterator, PointHistory<dim>>
@@ -143,7 +153,7 @@ class Problem {
         int iterations;
         int max_no_of_iterations;
 
-        // Linear algebra
+        // Linear algebra objects for solving the problem
         Vector<double> system_rhs;
         Vector<double> solution, delta_solution;
         Vector<double> residual;
@@ -153,14 +163,14 @@ class Problem {
                                       homogenous_constraints;
 
         // Output
-        /*std::ofstream text_output_file;*/
         DataOut<dim> data_out;
+
 };
 
 template <int dim>
 Problem<dim>::Problem () : 
     dof_handler(triangulation),
-    fe(FE_Q<dim>(1)^dim),
+    fe(FE_Q<dim>(1), dim),
     quadrature_formula(fe.degree + 1),
     fe_values(
             fe,
@@ -168,6 +178,13 @@ Problem<dim>::Problem () :
             update_values |
             update_quadrature_points |
             update_gradients |
+            update_JxW_values),
+    dof_handler_L2(triangulation),
+    fe_L2(FE_Q<dim>(1), 1),
+    fe_values_L2(
+            fe_L2,
+            quadrature_formula,
+            update_values |
             update_JxW_values),
     relative_tolerance(1e-12),
     current_time(0),
@@ -243,16 +260,19 @@ void Problem<dim>::run () {
 
             solve_linear_system();
 
-            /*std::cout << "Corner x displacement : " << solution[21] << "\n";*/
-            /*std::cout << "Corner y displacement : " << solution[22] << "\n";*/
-            /*std::cout << "Corner z displacement : " << solution[23] << "\n";*/
-
             update_quadrature_point_data();
             iterations++;
 
         }
 
+        perform_L2_projections();
+
         output_results();
+
+        if (step_number == 2) {
+            std::cout << "Exiting after two steps. Delete this if condition later.\n";
+            exit(0);
+        }
 
     }
 
@@ -279,7 +299,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(1);
+    /*triangulation.refine_global(1);*/
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -293,6 +313,7 @@ void Problem<dim>::setup_system () {
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
 
+    // Make space in memory for the system matrix
     DynamicSparsityPattern dsp(dof_handler.n_dofs());
     DoFTools::make_sparsity_pattern(
                                 dof_handler, 
@@ -301,6 +322,17 @@ void Problem<dim>::setup_system () {
                                 false);
     sparsity_pattern.copy_from(dsp);
     system_matrix.reinit(sparsity_pattern);
+
+    // Make space in memory for the mass matrix used for L2 projection
+    dof_handler_L2.distribute_dofs(fe_L2);
+    DynamicSparsityPattern dsp_L2(dof_handler_L2.n_dofs());
+    DoFTools::make_sparsity_pattern(
+                                dof_handler_L2, 
+                                dsp_L2, 
+                                constraints_L2, 
+                                false);
+    sparsity_pattern_L2.copy_from(dsp_L2);
+    mass_matrix_L2.reinit(sparsity_pattern_L2);
 
     // Set boundary indices. The following boundary indexing assumes that the
     // domain is a cube of edge length 1 with sides parallel to and on the 3
@@ -431,6 +463,9 @@ void Problem<dim>::generate_boundary_conditions () {
                             fe.component_mask(z_component));
 
     homogenous_constraints.close();
+
+    constraints_L2.clear();
+    constraints_L2.close();
 
 }
 
@@ -706,23 +741,146 @@ void Problem<dim>::update_quadrature_point_data () {
 }    
 
 template <int dim>
+void Problem<dim>::perform_L2_projections () {
+
+    mass_matrix_L2 = 0.0;
+    nodal_output_L2.clear();
+
+    unsigned int no_of_dofs_L2 = dof_handler_L2.n_dofs();
+
+    Vector<double> rhs_L2(no_of_dofs_L2),
+                   projection_L2(no_of_dofs_L2);
+
+    const unsigned int dofs_per_cell       = fe_L2.n_dofs_per_cell();
+    const unsigned int n_quadrature_points = fe_values_L2.n_quadrature_points;
+
+    FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
+    Vector<double>     cell_rhs(dofs_per_cell);
+
+    // types::global_dof_index is an unsigned int of 32 bits on most systems.
+    // So the following is an array of integers.
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+
+    // Object for temporarily storing the quadrature point data while
+    // performing quadrature over the current cell
+    std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+
+    Tensor<2, dim> F;    // Deformation gradient
+
+    for (const auto &cell : dof_handler_L2.active_cell_iterators()) {
+
+        fe_values_L2.reinit(cell);
+
+        cell_matrix = 0.0;
+
+        quadrature_point_history_data = quadrature_point_history.get_data(cell);
+
+        for (unsigned int q = 0; q < n_quadrature_points; ++q) {
+
+            F = quadrature_point_history_data[q]->deformation_gradient;
+            
+            double J = determinant(F);
+
+            for (unsigned int i = 0; i < dofs_per_cell; ++i) {
+
+                for (unsigned int j = 0; j < dofs_per_cell; ++j) {
+
+                    cell_matrix(i, j) +=
+                        fe_values_L2.shape_value(i, q) * 
+                        fe_values_L2.shape_value(j, q) *
+                        J * fe_values_L2.JxW(q); 
+
+                } // End of j loop
+            } // End of i loop
+        } // Quadrature loop
+        cell->get_dof_indices(local_dof_indices);
+        constraints_L2.distribute_local_to_global(
+                    cell_matrix,
+                    local_dof_indices,
+                    mass_matrix_L2);
+    } // End of loop over all cells to make the mass matrix
+
+    for (const auto &cell : dof_handler_L2.active_cell_iterators()) {
+
+        fe_values_L2.reinit(cell);
+
+        cell_rhs = 0.0;
+
+        quadrature_point_history_data = quadrature_point_history.get_data(cell);
+
+        for (unsigned int q = 0; q < n_quadrature_points; ++q) {
+
+            F = quadrature_point_history_data[q]->deformation_gradient;
+            
+            double J = determinant(F);
+
+            for (unsigned int i = 0; i < dofs_per_cell; ++i) {
+
+                cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[2][2] *
+                    J * fe_values_L2.JxW(q); 
+
+            } // End of i loop
+        } // Quadrature loop
+        cell->get_dof_indices(local_dof_indices);
+        constraints_L2.distribute_local_to_global(
+                    cell_rhs,
+                    local_dof_indices,
+                    rhs_L2);
+    } // End of loop over all cells to make the right hand side
+
+    // The solver will do a maximum of 1000 iterations before giving up
+    SolverControl solver_control(1000, 1e-12);
+    SolverCG<Vector<double>> solver_cg(solver_control);
+    solver_cg.solve(mass_matrix_L2,
+                    projection_L2,
+                    rhs_L2,
+                    IdentityMatrix(no_of_dofs_L2));
+
+    nodal_output_L2.push_back(projection_L2);
+
+}
+
+template <int dim>
 void Problem<dim>::output_results () {
 
+    // Refresh data_out object to write data from current time step.
+    data_out.clear_data_vectors();
+
+    // -------------------------------------------------------------------------
+
+    // Output data directly from DOFs
     std::vector<DataComponentInterpretation::DataComponentInterpretation>
     data_component_interpretation(
     dim, DataComponentInterpretation::component_is_part_of_vector);
 
     std::vector<std::string> solution_name(dim, "displacement");
 
-    data_out.clear_data_vectors();
+    data_out.add_data_vector(
+                        dof_handler,
+                        solution, 
+                        solution_name,
+                        data_component_interpretation);
 
-    data_out.attach_dof_handler(dof_handler);
+    // -------------------------------------------------------------------------
 
-    data_out.add_data_vector(solution, 
-                             solution_name,
-                             DataOut<dim>::type_dof_data,
-                             data_component_interpretation);
+    // Output data from L2 projection
+    std::vector<DataComponentInterpretation::DataComponentInterpretation>
+    data_component_interpretation_L2;
 
+    data_component_interpretation_L2
+        .push_back(DataComponentInterpretation::component_is_scalar);
+
+    data_out.add_data_vector(
+                        dof_handler_L2,
+                        nodal_output_L2[0], 
+                        "sigma_zz",
+                        data_component_interpretation_L2);
+
+    // -------------------------------------------------------------------------
+
+    // All data added to data_out object. Now send to vtu file.
     const MappingQEulerian<dim> q_mapping(fe.degree, dof_handler, solution);
 
     data_out.build_patches(q_mapping, fe.degree);;
