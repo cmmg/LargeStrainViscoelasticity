@@ -199,6 +199,8 @@ template <int dim>
 void Problem<dim>::run () {
 
     setup_system();
+    perform_L2_projections();
+    output_results(); // Output the initial state of the system to the output file
 
     while (current_time < total_time) {
 
@@ -269,10 +271,10 @@ void Problem<dim>::run () {
 
         output_results();
 
-        if (step_number == 2) {
-            std::cout << "Exiting after two steps. Delete this if condition later.\n";
-            exit(0);
-        }
+        /*if (step_number == 5) {*/
+        /*    std::cout << "Exiting after few steps. Delete this if condition later.\n";*/
+        /*    exit(0);*/
+        /*}*/
 
     }
 
@@ -299,7 +301,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    /*triangulation.refine_global(1);*/
+    triangulation.refine_global(2);
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -743,19 +745,50 @@ void Problem<dim>::update_quadrature_point_data () {
 template <int dim>
 void Problem<dim>::perform_L2_projections () {
 
+    // This function projects quadrature point data to the nodes of the
+    // triangulation. The vectors containing the projected data are written by
+    // the output_results function to the output vtu file for making
+    // temperature plots.
+
     mass_matrix_L2 = 0.0;
     nodal_output_L2.clear();
 
     unsigned int no_of_dofs_L2 = dof_handler_L2.n_dofs();
 
-    Vector<double> rhs_L2(no_of_dofs_L2),
-                   projection_L2(no_of_dofs_L2);
-
     const unsigned int dofs_per_cell       = fe_L2.n_dofs_per_cell();
     const unsigned int n_quadrature_points = fe_values_L2.n_quadrature_points;
 
+    // Contributions from this cell level matrix are used to buld the global
+    // mass matrix
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
-    Vector<double>     cell_rhs(dofs_per_cell);
+
+    // Variables named *rhs_L2 are built from quadrature point data
+    // Variables named *projection_L2 contain the projected, nodal data
+    // Variables named *cell_rhs are used to build variables named *rhs_L2
+
+    Vector<double> sigma_xx_rhs_L2(no_of_dofs_L2);
+    Vector<double> sigma_xx_projection_L2(no_of_dofs_L2);
+    Vector<double> sigma_xx_cell_rhs(dofs_per_cell);
+
+    Vector<double> sigma_xy_rhs_L2(no_of_dofs_L2);
+    Vector<double> sigma_xy_projection_L2(no_of_dofs_L2);
+    Vector<double> sigma_xy_cell_rhs(dofs_per_cell);
+
+    Vector<double> sigma_xz_rhs_L2(no_of_dofs_L2);
+    Vector<double> sigma_xz_projection_L2(no_of_dofs_L2);
+    Vector<double> sigma_xz_cell_rhs(dofs_per_cell);
+
+    Vector<double> sigma_yy_rhs_L2(no_of_dofs_L2);
+    Vector<double> sigma_yy_projection_L2(no_of_dofs_L2);
+    Vector<double> sigma_yy_cell_rhs(dofs_per_cell);
+
+    Vector<double> sigma_yz_rhs_L2(no_of_dofs_L2);
+    Vector<double> sigma_yz_projection_L2(no_of_dofs_L2);
+    Vector<double> sigma_yz_cell_rhs(dofs_per_cell);
+
+    Vector<double> sigma_zz_rhs_L2(no_of_dofs_L2);
+    Vector<double> sigma_zz_projection_L2(no_of_dofs_L2);
+    Vector<double> sigma_zz_cell_rhs(dofs_per_cell);
 
     // types::global_dof_index is an unsigned int of 32 bits on most systems.
     // So the following is an array of integers.
@@ -773,6 +806,13 @@ void Problem<dim>::perform_L2_projections () {
 
         cell_matrix = 0.0;
 
+        sigma_xx_cell_rhs = 0.0;
+        sigma_xy_cell_rhs = 0.0;
+        sigma_xz_cell_rhs = 0.0;
+        sigma_yy_cell_rhs = 0.0;
+        sigma_yz_cell_rhs = 0.0;
+        sigma_zz_cell_rhs = 0.0;
+
         quadrature_point_history_data = quadrature_point_history.get_data(cell);
 
         for (unsigned int q = 0; q < n_quadrature_points; ++q) {
@@ -782,6 +822,36 @@ void Problem<dim>::perform_L2_projections () {
             double J = determinant(F);
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i) {
+
+                sigma_xx_cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[0][0] *
+                    J * fe_values_L2.JxW(q); 
+
+                sigma_xy_cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[0][1] *
+                    J * fe_values_L2.JxW(q); 
+
+                sigma_xz_cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[0][2] *
+                    J * fe_values_L2.JxW(q); 
+
+                sigma_yy_cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[1][1] *
+                    J * fe_values_L2.JxW(q); 
+
+                sigma_yz_cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[1][2] *
+                    J * fe_values_L2.JxW(q); 
+
+                sigma_zz_cell_rhs(i) +=
+                    fe_values_L2.shape_value(i, q) * 
+                    quadrature_point_history_data[q]->kirchhoff_stress[2][2] *
+                    J * fe_values_L2.JxW(q); 
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j) {
 
@@ -793,52 +863,87 @@ void Problem<dim>::perform_L2_projections () {
                 } // End of j loop
             } // End of i loop
         } // Quadrature loop
+
         cell->get_dof_indices(local_dof_indices);
+
         constraints_L2.distribute_local_to_global(
                     cell_matrix,
                     local_dof_indices,
                     mass_matrix_L2);
-    } // End of loop over all cells to make the mass matrix
 
-    for (const auto &cell : dof_handler_L2.active_cell_iterators()) {
-
-        fe_values_L2.reinit(cell);
-
-        cell_rhs = 0.0;
-
-        quadrature_point_history_data = quadrature_point_history.get_data(cell);
-
-        for (unsigned int q = 0; q < n_quadrature_points; ++q) {
-
-            F = quadrature_point_history_data[q]->deformation_gradient;
-            
-            double J = determinant(F);
-
-            for (unsigned int i = 0; i < dofs_per_cell; ++i) {
-
-                cell_rhs(i) +=
-                    fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[2][2] *
-                    J * fe_values_L2.JxW(q); 
-
-            } // End of i loop
-        } // Quadrature loop
-        cell->get_dof_indices(local_dof_indices);
         constraints_L2.distribute_local_to_global(
-                    cell_rhs,
+                    sigma_xx_cell_rhs,
                     local_dof_indices,
-                    rhs_L2);
-    } // End of loop over all cells to make the right hand side
+                    sigma_xx_rhs_L2);
+
+        constraints_L2.distribute_local_to_global(
+                    sigma_xy_cell_rhs,
+                    local_dof_indices,
+                    sigma_xy_rhs_L2);
+
+        constraints_L2.distribute_local_to_global(
+                    sigma_xz_cell_rhs,
+                    local_dof_indices,
+                    sigma_xz_rhs_L2);
+
+        constraints_L2.distribute_local_to_global(
+                    sigma_yy_cell_rhs,
+                    local_dof_indices,
+                    sigma_yy_rhs_L2);
+
+        constraints_L2.distribute_local_to_global(
+                    sigma_yz_cell_rhs,
+                    local_dof_indices,
+                    sigma_yz_rhs_L2);
+
+        constraints_L2.distribute_local_to_global(
+                    sigma_zz_cell_rhs,
+                    local_dof_indices,
+                    sigma_zz_rhs_L2);
+
+    } // End of loop over all cells to make the mass matrix
 
     // The solver will do a maximum of 1000 iterations before giving up
     SolverControl solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver_cg(solver_control);
     solver_cg.solve(mass_matrix_L2,
-                    projection_L2,
-                    rhs_L2,
+                    sigma_xx_projection_L2,
+                    sigma_xx_rhs_L2,
                     IdentityMatrix(no_of_dofs_L2));
 
-    nodal_output_L2.push_back(projection_L2);
+    solver_cg.solve(mass_matrix_L2,
+                    sigma_xy_projection_L2,
+                    sigma_xy_rhs_L2,
+                    IdentityMatrix(no_of_dofs_L2));
+
+    solver_cg.solve(mass_matrix_L2,
+                    sigma_xz_projection_L2,
+                    sigma_xz_rhs_L2,
+                    IdentityMatrix(no_of_dofs_L2));
+
+    solver_cg.solve(mass_matrix_L2,
+                    sigma_yy_projection_L2,
+                    sigma_yy_rhs_L2,
+                    IdentityMatrix(no_of_dofs_L2));
+
+    solver_cg.solve(mass_matrix_L2,
+                    sigma_yz_projection_L2,
+                    sigma_yz_rhs_L2,
+                    IdentityMatrix(no_of_dofs_L2));
+
+    solver_cg.solve(mass_matrix_L2,
+                    sigma_zz_projection_L2,
+                    sigma_zz_rhs_L2,
+                    IdentityMatrix(no_of_dofs_L2));
+
+    nodal_output_L2.push_back(sigma_xx_projection_L2);
+    nodal_output_L2.push_back(sigma_xy_projection_L2);
+    nodal_output_L2.push_back(sigma_xz_projection_L2);
+    nodal_output_L2.push_back(sigma_yy_projection_L2);
+    nodal_output_L2.push_back(sigma_yz_projection_L2);
+    nodal_output_L2.push_back(sigma_zz_projection_L2);
+
+    /*std::cout << sigma_zz_projection_L2 << std::endl;*/
 
 }
 
@@ -875,6 +980,36 @@ void Problem<dim>::output_results () {
     data_out.add_data_vector(
                         dof_handler_L2,
                         nodal_output_L2[0], 
+                        "sigma_xx",
+                        data_component_interpretation_L2);
+
+    data_out.add_data_vector(
+                        dof_handler_L2,
+                        nodal_output_L2[1], 
+                        "sigma_xy",
+                        data_component_interpretation_L2);
+
+    data_out.add_data_vector(
+                        dof_handler_L2,
+                        nodal_output_L2[2], 
+                        "sigma_xz",
+                        data_component_interpretation_L2);
+
+    data_out.add_data_vector(
+                        dof_handler_L2,
+                        nodal_output_L2[3], 
+                        "sigma_yy",
+                        data_component_interpretation_L2);
+
+    data_out.add_data_vector(
+                        dof_handler_L2,
+                        nodal_output_L2[4], 
+                        "sigma_yz",
+                        data_component_interpretation_L2);
+
+    data_out.add_data_vector(
+                        dof_handler_L2,
+                        nodal_output_L2[5], 
                         "sigma_zz",
                         data_component_interpretation_L2);
 
