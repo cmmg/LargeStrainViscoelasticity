@@ -25,7 +25,7 @@
 
 // Boundary conditions
 #include <deal.II/numerics/vector_tools.h>
-#include <deal.II/numerics/matrix_tools.h>
+/*#include <deal.II/numerics/matrix_tools.h>*/
 
 // Graphical output
 #include <deal.II/numerics/data_out.h>
@@ -101,7 +101,7 @@ void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
     // The variable name p has been commented out to avoid compiler warnings
     // about unused variables
     values = 0;
-    values(2) = - speed * current_time;
+    values(1) =   speed * current_time;
 }
 
 template <int dim>
@@ -119,7 +119,6 @@ class Problem {
         void update_quadrature_point_data();
         void perform_L2_projections();
         void output_results();
-        void queries();
 
     private: // variables
         // Meshing
@@ -146,6 +145,7 @@ class Problem {
         double initial_residual_norm;
         double residual_norm;
         double relative_tolerance;
+        double absolute_tolerance;
         double current_time;
         double delta_t;
         double total_time;
@@ -187,6 +187,7 @@ Problem<dim>::Problem () :
             update_values |
             update_JxW_values),
     relative_tolerance(1e-12),
+    absolute_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
     total_time(0.25),
@@ -248,9 +249,10 @@ void Problem<dim>::run () {
                 std::cout << "Max iterations reached. Ending program.\n";
                 exit(0);
             }
+
             if (residual_norm / initial_residual_norm < relative_tolerance
                 or
-                residual_norm < 1e-12) {
+                residual_norm < absolute_tolerance) {
                 std::cout 
                     << "Step converged in " 
                     << iterations 
@@ -271,29 +273,9 @@ void Problem<dim>::run () {
 
         output_results();
 
-        /*if (step_number == 5) {*/
-        /*    std::cout << "Exiting after few steps. Delete this if condition later.\n";*/
-        /*    exit(0);*/
-        /*}*/
-
     }
 
-}
-
-template <int dim>
-void Problem<dim>::queries () {
-
-    std::vector<Point<dim>> all_vertices = triangulation.get_vertices();
-
-    std::cout << "\nCoordinates of all vertices" << std::endl;
-    for(auto vertex : all_vertices) {
-        std::cout << " x = " << vertex[0]
-                  << " y = " << vertex[1]
-                  << " z = " << vertex[2]
-                  << " norm = " << vertex.norm()
-                  << std::endl;
-    }
-}
+} // End of run function
 
 template <int dim>
 void Problem<dim>::setup_system () {
@@ -386,27 +368,24 @@ void Problem<dim>::generate_boundary_conditions () {
 
     non_homogenous_constraints.clear();
 
-    // The face on the yz plane has boundary indicator of 0 and must be kept
-    // from moving in the x direction
+    // The face on the xy plane has boundary indicator of 4 and must be kept
+    // from moving in the x, y or z directions. The following three boundary
+    // conditions ensure this. They can probably be rolled into one function
+    // call.
     VectorTools::interpolate_boundary_values(
                             dof_handler,
-                            0,
+                            4,
                             Functions::ZeroFunction<dim>(dim),
                             non_homogenous_constraints,
                             fe.component_mask(x_component));
 
-    // The face on the xz plane has boundary indicator of 2 and must be kept
-    // from moving in the y direction
-    //
     VectorTools::interpolate_boundary_values(
                             dof_handler,
-                            2,
+                            4,
                             Functions::ZeroFunction<dim>(dim),
                             non_homogenous_constraints,
                             fe.component_mask(y_component));
 
-    // The face on the xy plane has boundary indicator of 4 and must be kept
-    // from moving in the z direction
     VectorTools::interpolate_boundary_values(
                             dof_handler,
                             4,
@@ -414,40 +393,34 @@ void Problem<dim>::generate_boundary_conditions () {
                             non_homogenous_constraints,
                             fe.component_mask(z_component));
 
-    // The face opposite the xy plane has boundary indicator of 5. This is
-    // where the velocity boundary condition must be applied.
+    // The face opposite the xy plane has boundary indicator of 5. This must be
+    // made to move parallel to the xy plane and must not change height
     VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            5,
-                            VelocityBoundaryCondition<dim>(current_time, z1_speed),
-                            non_homogenous_constraints,
-                            fe.component_mask(z_component));
+                    dof_handler,
+                    5,
+                    VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                    non_homogenous_constraints,
+                    fe.component_mask(y_component));
 
     non_homogenous_constraints.close();
 
 
     homogenous_constraints.clear();
 
-    // The face on the yz plane has boundary indicator of 0 and must be kept
-    // from moving in the x direction
     VectorTools::interpolate_boundary_values(
                             dof_handler,
-                            0,
+                            4,
                             Functions::ZeroFunction<dim>(dim),
                             homogenous_constraints,
                             fe.component_mask(x_component));
 
-    // The face on the xz plane has boundary indicator of 2 and must be kept
-    // from moving in the y direction
     VectorTools::interpolate_boundary_values(
                             dof_handler,
-                            2,
+                            4,
                             Functions::ZeroFunction<dim>(dim),
                             homogenous_constraints,
                             fe.component_mask(y_component));
 
-    // The face on the xy plane has boundary indicator of 4 and must be kept
-    // from moving in the z direction
     VectorTools::interpolate_boundary_values(
                             dof_handler,
                             4,
@@ -455,14 +428,12 @@ void Problem<dim>::generate_boundary_conditions () {
                             homogenous_constraints,
                             fe.component_mask(z_component));
 
-    // The face opposite the xy plane has boundary indicator of 5. This is
-    // where the velocity boundary condition must be applied.
     VectorTools::interpolate_boundary_values(
                             dof_handler,
                             5,
                             Functions::ZeroFunction<dim>(dim),
                             homogenous_constraints,
-                            fe.component_mask(z_component));
+                            fe.component_mask(y_component));
 
     homogenous_constraints.close();
 
@@ -1015,13 +986,14 @@ void Problem<dim>::output_results () {
 
     // -------------------------------------------------------------------------
 
-    // All data added to data_out object. Now send to vtu file.
+    // All data added to data_out object. Now send to vtu file. The following
+    // mapping object allows one to view the deformed shape of the domain.
     const MappingQEulerian<dim> q_mapping(fe.degree, dof_handler, solution);
 
     data_out.build_patches(q_mapping, fe.degree);;
 
     std::string output_file_name = 
-            "/home/skunda/hyperelasticity/solution/solution-" 
+            "solution/solution-" 
             + std::to_string(step_number)
             + ".vtu";
 
