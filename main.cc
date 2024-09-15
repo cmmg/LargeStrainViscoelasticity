@@ -65,6 +65,7 @@ class PointHistory {
         Tensor<2, dim> deformation_gradient;
         SymmetricTensor<2, dim> kirchhoff_stress;
         SymmetricTensor<4, dim> tangent_modulus;
+
 };
 
 template <int dim>
@@ -101,7 +102,7 @@ void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
     // The variable name p has been commented out to avoid compiler warnings
     // about unused variables
     values = 0;
-    values(1) =   speed * current_time;
+    values(2) = - speed * current_time;
 }
 
 template <int dim>
@@ -116,7 +117,14 @@ class Problem {
         void assemble_linear_system();
         void calculate_residual_norm();
         void solve_linear_system();
-        void update_quadrature_point_data();
+        void update_all_history_data();
+        void update_quadrature_point_data (
+            // Input variables
+            Tensor<2, 3> F, // Deformation gradient
+            // Output variables
+            SymmetricTensor<2, dim> &Js, // Kirchhoff stress
+            SymmetricTensor<4, dim> &Jc  // Spatial tangent modulus * determinant(F)
+        );
         void perform_L2_projections();
         void output_results();
 
@@ -190,7 +198,7 @@ Problem<dim>::Problem () :
     absolute_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
-    total_time(0.25),
+    total_time(0.4),
     step_number(0),
     max_no_of_iterations(100)
     /*text_output_file("text_output_file.txt")*/
@@ -231,7 +239,7 @@ void Problem<dim>::run () {
         initial_residual_norm = residual_norm;
         std::cout << "Initial norm : " << residual_norm << "\n";
         solve_linear_system();
-        update_quadrature_point_data();
+        update_all_history_data();
         iterations++;
 
         // Solve the current, nonlinear increment
@@ -264,7 +272,7 @@ void Problem<dim>::run () {
 
             solve_linear_system();
 
-            update_quadrature_point_data();
+            update_all_history_data();
             iterations++;
 
         }
@@ -283,7 +291,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     GridGenerator::hyper_cube(triangulation);
-    triangulation.refine_global(2);
+    triangulation.refine_global(1);
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -359,86 +367,450 @@ void Problem<dim>::setup_system () {
 template <int dim>
 void Problem<dim>::generate_boundary_conditions () {
 
-    // The following are three arrays of boolean values that tell the
-    // interpolate_boundary_values function which component to apply the
-    // boundary values to.
-    const FEValuesExtractors::Scalar x_component(0);
-    const FEValuesExtractors::Scalar y_component(1);
-    const FEValuesExtractors::Scalar z_component(2);
+    /*
 
-    non_homogenous_constraints.clear();
+    The following are descriptions of the boundary conditions applied by this
+    function. In the following, assume that the boundary conditions are being
+    applied to a cube of side 1 with three of its faces lying on the coordinate
+    planes.
 
-    // The face on the xy plane has boundary indicator of 4 and must be kept
-    // from moving in the x, y or z directions. The following three boundary
-    // conditions ensure this. They can probably be rolled into one function
-    // call.
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            4,
-                            Functions::ZeroFunction<dim>(dim),
-                            non_homogenous_constraints,
-                            fe.component_mask(x_component));
+    - constrained_shear_no_lateral_displacement
+        One face is not allowed any displacement at all. The opposite face
+    moves parallel to the fixed face. The points on the moving face are NOT
+    allowed to move perpendicular to the direction of shear.
 
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            4,
-                            Functions::ZeroFunction<dim>(dim),
-                            non_homogenous_constraints,
-                            fe.component_mask(y_component));
+    - constrained_shear_with_lateral_displacement
+        One face is not allowed any displacement at all. The opposite face
+    moves parallel to the fixed face. The points on the moving face are allowed
+    to move perpendicular to the direction of shear.
 
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            4,
-                            Functions::ZeroFunction<dim>(dim),
-                            non_homogenous_constraints,
-                            fe.component_mask(z_component));
+    - pure_shear
+        One face is not allowed any displacement at all. A simple velocity
+    boundary condition is applied to the opposite face with no restraint on any
+    other displacement component.
 
-    // The face opposite the xy plane has boundary indicator of 5. This must be
-    // made to move parallel to the xy plane and must not change height
-    VectorTools::interpolate_boundary_values(
+    - uniaxial_compression
+        The three faces of the cube lying on the coordinate planes are not
+    allowed to move perpendicular to the coordinate planes they are lying on,
+    but their motion parallel to their respective planes is not restricted. One
+    face not on any of the coordinate planes is moved towards its opposite
+    face. The whole cube experiences a spatially uniform deformation.
+
+    */
+
+    bool constrained_shear_no_lateral_displacement   = false;
+    bool constrained_shear_with_lateral_displacement = false;
+    bool pure_shear                                  = false;
+    bool uniaxial_compression                        = true;
+
+    // Check that exactly one of the above set of boundary conditions is
+    // applied to the domain.
+    if (!(
+        constrained_shear_no_lateral_displacement +
+        constrained_shear_with_lateral_displacement +
+        pure_shear +
+        uniaxial_compression
+        == 1
+    )) {
+        std::cout 
+        << "Exactly one of the set of boundary conditions must be applied at point of time."
+        << "Exiting program."
+        << std::endl;
+        exit(0);
+    }
+
+    if (constrained_shear_no_lateral_displacement) {
+
+        // The following are three arrays of boolean values that tell the
+        // interpolate_boundary_values function which component to apply the
+        // boundary values to.
+        const FEValuesExtractors::Scalar x_component(0);
+        const FEValuesExtractors::Scalar y_component(1);
+        const FEValuesExtractors::Scalar z_component(2);
+
+        non_homogenous_constraints.clear();
+
+        // The face on the xy plane has boundary indicator of 4 and must be kept
+        // from moving in the x, y or z directions. The following three boundary
+        // conditions ensure this. They can probably be rolled into one function
+        // call.
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        // The face opposite the xy plane has boundary indicator of 5. This must be
+        // made to move parallel to the xy plane and must not change height
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        VectorTools::interpolate_boundary_values(
                     dof_handler,
                     5,
                     VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
                     non_homogenous_constraints,
                     fe.component_mask(y_component));
 
-    non_homogenous_constraints.close();
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        non_homogenous_constraints.close();
 
 
-    homogenous_constraints.clear();
+        homogenous_constraints.clear();
 
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            4,
-                            Functions::ZeroFunction<dim>(dim),
-                            homogenous_constraints,
-                            fe.component_mask(x_component));
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(x_component));
 
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            4,
-                            Functions::ZeroFunction<dim>(dim),
-                            homogenous_constraints,
-                            fe.component_mask(y_component));
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
 
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            4,
-                            Functions::ZeroFunction<dim>(dim),
-                            homogenous_constraints,
-                            fe.component_mask(z_component));
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
 
-    VectorTools::interpolate_boundary_values(
-                            dof_handler,
-                            5,
-                            Functions::ZeroFunction<dim>(dim),
-                            homogenous_constraints,
-                            fe.component_mask(y_component));
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(x_component));
 
-    homogenous_constraints.close();
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
 
-    constraints_L2.clear();
-    constraints_L2.close();
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        homogenous_constraints.close();
+
+        constraints_L2.clear();
+        constraints_L2.close();
+
+    } // End of conditional statement for constrained_shear_no_lateral_displacement
+
+    if (constrained_shear_with_lateral_displacement) {
+
+        // The following are three arrays of boolean values that tell the
+        // interpolate_boundary_values function which component to apply the
+        // boundary values to.
+        const FEValuesExtractors::Scalar x_component(0);
+        const FEValuesExtractors::Scalar y_component(1);
+        const FEValuesExtractors::Scalar z_component(2);
+
+        non_homogenous_constraints.clear();
+
+        // The face on the xy plane has boundary indicator of 4 and must be kept
+        // from moving in the x, y or z directions. The following three boundary
+        // conditions ensure this. They can probably be rolled into one function
+        // call.
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        // The face opposite the xy plane has boundary indicator of 5. This must be
+        // made to move parallel to the xy plane and must not change height
+        VectorTools::interpolate_boundary_values(
+                        dof_handler,
+                        5,
+                        VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                        non_homogenous_constraints,
+                        fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        non_homogenous_constraints.close();
+
+
+        homogenous_constraints.clear();
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        homogenous_constraints.close();
+
+        constraints_L2.clear();
+        constraints_L2.close();
+
+    } // End of conditional statement for constrained_shear_with_lateral_displacement
+
+    if (pure_shear) {
+
+        // The following are three arrays of boolean values that tell the
+        // interpolate_boundary_values function which component to apply the
+        // boundary values to.
+        const FEValuesExtractors::Scalar x_component(0);
+        const FEValuesExtractors::Scalar y_component(1);
+        const FEValuesExtractors::Scalar z_component(2);
+
+        non_homogenous_constraints.clear();
+
+        // The face on the xy plane has boundary indicator of 4 and must be kept
+        // from moving in the x, y or z directions. The following three boundary
+        // conditions ensure this. They can probably be rolled into one function
+        // call.
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        // The face opposite the xy plane has boundary indicator of 5. This must be
+        // made to move parallel to the xy plane and must not change height
+        VectorTools::interpolate_boundary_values(
+                        dof_handler,
+                        5,
+                        VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                        non_homogenous_constraints,
+                        fe.component_mask(y_component));
+
+        non_homogenous_constraints.close();
+
+
+        homogenous_constraints.clear();
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        homogenous_constraints.close();
+
+        constraints_L2.clear();
+        constraints_L2.close();
+
+    } // End of pure_shear
+
+    if (uniaxial_compression) {
+
+        // The following are three arrays of boolean values that tell the
+        // interpolate_boundary_values function which component to apply the
+        // boundary values to.
+        const FEValuesExtractors::Scalar x_component(0);
+        const FEValuesExtractors::Scalar y_component(1);
+        const FEValuesExtractors::Scalar z_component(2);
+
+        non_homogenous_constraints.clear();
+
+        // The face on the yz plane has boundary indicator of 0 and must be kept
+        // from moving in the x direction
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                0,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        // The face on the xz plane has boundary indicator of 2 and must be kept
+        // from moving in the y direction
+        //
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                2,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        // The face on the xy plane has boundary indicator of 4 and must be kept
+        // from moving in the z direction
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                non_homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        // The face opposite the xy plane has boundary indicator of 5. This is
+        // where the velocity boundary condition must be applied.
+        VectorTools::interpolate_boundary_values(
+                        dof_handler,
+                        5,
+                        VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                        non_homogenous_constraints,
+                        fe.component_mask(z_component));
+
+        non_homogenous_constraints.close();
+
+
+        homogenous_constraints.clear();
+
+        // The face on the yz plane has boundary indicator of 0 and must be kept
+        // from moving in the x direction
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                0,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(x_component));
+
+        // The face on the xz plane has boundary indicator of 2 and must be kept
+        // from moving in the y direction
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                2,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(y_component));
+
+        // The face on the xy plane has boundary indicator of 4 and must be kept
+        // from moving in the z direction
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                4,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        // The face opposite the xy plane has boundary indicator of 5. This is
+        // where the velocity boundary condition must be applied.
+        VectorTools::interpolate_boundary_values(
+                                dof_handler,
+                                5,
+                                Functions::ZeroFunction<dim>(dim),
+                                homogenous_constraints,
+                                fe.component_mask(z_component));
+
+        homogenous_constraints.close();
+
+        constraints_L2.clear();
+        constraints_L2.close();
+
+    } // End of uniaxial_compression
 
 }
 
@@ -640,23 +1012,13 @@ void Problem<dim>::solve_linear_system () {
 }
 
 template <int dim>
-void Problem<dim>::update_quadrature_point_data () {
-
-    // Vector of vectors for storing the gradients of the displacement field at the
-    // integration points of a cell. The outer vector has length equal to the
-    // number of quadrature points in a cell. Each of the inner vectors is a
-    // list of dim elements of type Tensor<1, dim>.
-    std::vector<std::vector<Tensor<1, dim>>> solution_gradients(
-                                                quadrature_formula.size(),
-                                                std::vector<Tensor<1, dim>>(dim));
-
-    Tensor<2, dim> 
-    dUdX, // Gradient of displacement wrt reference coordinates
-    F;    // Deformation gradient
-
-    SymmetricTensor<2, dim>
-    E, // Green Lagrange strain tensor
-    S; // Second Piola Kirchhoff stress
+void Problem<dim>::update_quadrature_point_data (
+    // Input variables
+    Tensor<2, 3> F, // Deformation gradient
+    // Output variables
+    SymmetricTensor<2, dim> &Js, // Kirchhoff stress
+    SymmetricTensor<4, dim> &Jc  // Spatial tangent modulus * determinant(F)
+) {
 
     SymmetricTensor<4, dim> C; // Material tangent modulus
     // Compute the Lamè parameters. Y and nu are Young's modulus and Poisson's
@@ -673,6 +1035,31 @@ void Problem<dim>::update_quadrature_point_data () {
                           (((i == k) && (j == l) ? mu : 0.0) +
                            ((i == l) && (j == k) ? mu : 0.0) +
                            ((i == j) && (k == l) ? lambda : 0.0));
+
+    // Green Lagrange strain tensor
+    SymmetricTensor<2, dim> E = Physics::Elasticity::Kinematics::E(F);
+
+    // Second Piola Kirchhoff stress
+    SymmetricTensor<2, dim> S = C * E;
+
+    Js = Physics::Transformations::Contravariant::push_forward(S, F);
+    Jc = Physics::Transformations::Contravariant::push_forward(C, F);
+}
+
+template <int dim>
+void Problem<dim>::update_all_history_data () {
+
+    // Vector of vectors for storing the gradients of the displacement field at the
+    // integration points of a cell. The outer vector has length equal to the
+    // number of quadrature points in a cell. Each of the inner vectors is a
+    // list of dim elements of type Tensor<1, dim>.
+    std::vector<std::vector<Tensor<1, dim>>> solution_gradients(
+                                                quadrature_formula.size(),
+                                                std::vector<Tensor<1, dim>>(dim));
+
+    Tensor<2, dim> 
+    dUdX, // Gradient of displacement wrt reference coordinates
+    F;    // Deformation gradient
 
     SymmetricTensor<2, dim> Js; // Kirchhoff stress
     SymmetricTensor<4, dim> Jc; // Spatial tangent modulus * determinant(F)
@@ -698,12 +1085,14 @@ void Problem<dim>::update_quadrature_point_data () {
                     dUdX[i][j] = solution_gradients[q][i][j];
 
             F = Physics::Elasticity::Kinematics::F(dUdX);
-            E = Physics::Elasticity::Kinematics::E(F);
 
-            S = C * E;
-
-            Js = Physics::Transformations::Contravariant::push_forward(S, F);
-            Jc = Physics::Transformations::Contravariant::push_forward(C, F);
+            update_quadrature_point_data(
+                // Input variables
+                F,
+                // Output variables
+                Js, 
+                Jc
+            );
 
             quadrature_point_history_data[q]->deformation_gradient = F;
             quadrature_point_history_data[q]->kirchhoff_stress = Js;
