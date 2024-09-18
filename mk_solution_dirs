@@ -1,0 +1,4 @@
+mkdir solution_constrained_shear_no_lateral_displacement
+mkdir solution_constrained_shear_with_lateral_displacement
+mkdir solution_pure_shear
+mkdir solution_uniaxial_compression
