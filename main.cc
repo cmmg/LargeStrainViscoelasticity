@@ -118,13 +118,12 @@ class Problem {
         void calculate_residual_norm();
         void solve_linear_system();
         void update_all_history_data();
+
         void update_quadrature_point_data (
-            // Input variables
             Tensor<2, 3> F, // Deformation gradient
-            // Output variables
-            SymmetricTensor<2, dim> &Js, // Kirchhoff stress
-            SymmetricTensor<4, dim> &Jc  // Spatial tangent modulus * determinant(F)
+            std::shared_ptr<PointHistory<dim>> point_history
         );
+
         void perform_L2_projections();
         void output_results();
 
@@ -1015,9 +1014,7 @@ template <int dim>
 void Problem<dim>::update_quadrature_point_data (
     // Input variables
     Tensor<2, 3> F, // Deformation gradient
-    // Output variables
-    SymmetricTensor<2, dim> &Js, // Kirchhoff stress
-    SymmetricTensor<4, dim> &Jc  // Spatial tangent modulus * determinant(F)
+    std::shared_ptr<PointHistory<dim>> point_history
 ) {
 
     SymmetricTensor<4, dim> C; // Material tangent modulus
@@ -1042,8 +1039,18 @@ void Problem<dim>::update_quadrature_point_data (
     // Second Piola Kirchhoff stress
     SymmetricTensor<2, dim> S = C * E;
 
+    // Kirchhoff stress
+    SymmetricTensor<2, dim> 
     Js = Physics::Transformations::Contravariant::push_forward(S, F);
+
+    // Spatial tangent modulus * determinant(F)
+    SymmetricTensor<4, dim>
     Jc = Physics::Transformations::Contravariant::push_forward(C, F);
+
+    point_history->deformation_gradient = F;
+    point_history->kirchhoff_stress = Js;
+    point_history->tangent_modulus = Jc;
+
 }
 
 template <int dim>
@@ -1060,9 +1067,6 @@ void Problem<dim>::update_all_history_data () {
     Tensor<2, dim> 
     dUdX, // Gradient of displacement wrt reference coordinates
     F;    // Deformation gradient
-
-    SymmetricTensor<2, dim> Js; // Kirchhoff stress
-    SymmetricTensor<4, dim> Jc; // Spatial tangent modulus * determinant(F)
 
     // Temporary structure for holding the quadrature point data
     std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
@@ -1087,16 +1091,13 @@ void Problem<dim>::update_all_history_data () {
             F = Physics::Elasticity::Kinematics::F(dUdX);
 
             update_quadrature_point_data(
-                // Input variables
                 F,
-                // Output variables
-                Js, 
-                Jc
+                quadrature_point_history_data[q]
             );
 
-            quadrature_point_history_data[q]->deformation_gradient = F;
-            quadrature_point_history_data[q]->kirchhoff_stress = Js;
-            quadrature_point_history_data[q]->tangent_modulus = Jc;
+            /*quadrature_point_history_data[q]->deformation_gradient = F;*/
+            /*quadrature_point_history_data[q]->kirchhoff_stress = Js;*/
+            /*quadrature_point_history_data[q]->tangent_modulus = Jc;*/
 
         }
     }
@@ -1382,7 +1383,7 @@ void Problem<dim>::output_results () {
     data_out.build_patches(q_mapping, fe.degree);;
 
     std::string output_file_name = 
-            "solution/solution-" 
+            "solution_uniaxial_compression/solution-" 
             + std::to_string(step_number)
             + ".vtu";
 
