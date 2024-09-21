@@ -98,7 +98,7 @@ void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
     // The variable name p has been commented out to avoid compiler warnings
     // about unused variables
     values = 0;
-    values(1) = - speed * current_time;
+    values(1) = speed * current_time;
 }
 
 template <int dim>
@@ -116,8 +116,9 @@ class Problem {
         void update_all_history_data();
 
         void update_quadrature_point_data (
-            Tensor<2, 3> F, // Deformation gradient
-            std::shared_ptr<PointHistory<dim>> point_history
+            Tensor<2, dim> F, // Deformation gradient
+            std::shared_ptr<PointHistory<dim>> point_history,
+            unsigned int q
         );
 
         void perform_L2_projections();
@@ -168,6 +169,7 @@ class Problem {
 
         // Output
         DataOut<dim> data_out;
+        std::ofstream text_output_file;
 
 };
 
@@ -194,11 +196,11 @@ Problem<dim>::Problem () :
     absolute_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
-    total_time(0.4),
+    total_time(1.2),
     step_number(0),
     max_no_of_NR_iterations(100),
-    max_no_of_local_iterations(100)
-    /*text_output_file("text_output_file.txt")*/
+    max_no_of_local_iterations(100),
+    text_output_file("text_output_file.txt")
     {}
 
 template <int dim>
@@ -251,7 +253,8 @@ void Problem<dim>::run () {
                 << "\n";
 
             if (iterations == max_no_of_NR_iterations) {
-                std::cout << "Max iterations reached. Ending program.\n";
+                std::cout 
+                    << "Max Newton-Raphson iterations reached. Exiting program.\n";
                 exit(0);
             }
 
@@ -991,18 +994,11 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    /*std::cout << "iterations : " << iterations << "\n";*/
-    /*std::cout << "system rhs : " << system_rhs << "\n";*/
-    /*std::cout << "delta solution : " << delta_solution << "\n";*/
-
     if (iterations == 0) {
         non_homogenous_constraints.distribute(delta_solution);
     } else {
         homogenous_constraints.distribute(delta_solution);
     } 
-
-    /*std::cout << "system rhs : " << system_rhs << "\n";*/
-    /*std::cout << "delta solution : " << delta_solution << "\n";*/
 
     solution += delta_solution;
 
@@ -1012,9 +1008,7 @@ void Problem<dim>::solve_linear_system () {
 
 double inverse_Langevin(double y) {
 
-    double tmp = y
-               * (3 - (36/35) * pow(y, 2))
-               / (1 - (33/35) * pow(y, 2));
+    double tmp = y * (3 - pow(y, 2)) / (1 - pow(y, 2));
 
     return tmp;
 }
@@ -1051,103 +1045,65 @@ SymmetricTensor<2, dim> HenckyStrain(Tensor<2, dim> F) {
 }
 
 template <int dim>
-SymmetricTensor<2, dim> calculate_T_A_dev(Tensor<2, dim> F,
-                                          Tensor<2, dim> F_B) {
+SymmetricTensor<4, dim> compute_deviatoric_tangent_modulus(
+    Tensor<2, dim> F_old, // Deformation gradient of the previous time step
+    Tensor<2, dim> F_new  // Deformation gradient of the current time step
+) {
 
-    // Denote the identity tensor by I
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+    // This function calculates the tangent modulus of the model by perturbing
+    // the deformation gradient and using the the stress integration scheme to
+    // calculate the difference in the stress caused by a perturbation of the
+    // deformation gradient.
 
-    // Deformation gradient corresponding to hyperelastic deformation
-    Tensor<2, dim> F_A = F * invert(F_B); 
+    // Calculation of the perturbation amount
+    Tensor<2, dim> f = F_new * invert(F_old);
+    double epsilon = f.norm() / 100;
 
-    // Volume change
-    double J = determinant(F);
+    Tensor<2, dim> perturbation;
 
-    // Strain metric for the deviatoric hyperelastic portion of the deformation
-    SymmetricTensor<2, dim> 
-    B_bar_A = pow(J, -2/3) * symmetrize(F_A * transpose(F_A));
+    Tensor<2, dim> F_perturbed;
+    SymmetricTensor<4, dim> Jc;
 
-    // Stretch
-    double lambda = sqrt(trace(B_bar_A) / 3);
+    // Loop for computing the deviatoric part of the tangent modulus. Since the
+    // volumetric response is purely elastic, the volumetric part of the
+    // tangent modulus may be computed in a single step.
+    for (int i = 0; i < 3; ++i) {
 
-    SymmetricTensor<2, dim> T_A_dev = (mu_0 / J)
-                                    * (lambda_L / lambda)
-                                    * inverse_Langevin(lambda / lambda_L)
-                                    * (B_bar_A - pow(lambda, 2) * I);
+        perturbation = 0;
 
-    return T_A_dev;
+        if (i == 0) {
+            perturbation[0][1] = epsilon / 2;
+            perturbation[1][0] = epsilon / 2;
+        }
 
+        if (i == 1) {
+            perturbation[0][2] = epsilon / 2;
+            perturbation[2][0] = epsilon / 2;
+        }
+
+        if (i == 2) {
+            perturbation[1][2] = epsilon / 2;
+            perturbation[2][1] = epsilon / 2;
+        }
+
+        F_perturbed = F_new + perturbation * F_new
+
+    }
+
+    return Jc;
 }
-
-template <int dim>
-Tensor<2, dim> calculate_new_F_B(Tensor<2, dim> F,
-                                 Tensor<2, dim> F_B_old,
-                                 Tensor<2, dim> F_D_old,
-                                 Tensor<2, dim> F_B_trial,
-                                 SymmetricTensor<2, dim> T_A_vol,
-                                 double delta_t) {
-
-    double J = determinant(F);
-
-    SymmetricTensor<2, dim> T_A_dev = calculate_T_A_dev(F, F_B_old);
-    SymmetricTensor<2, dim> T_A = T_A_vol + T_A_dev;
-
-    Tensor<2, dim> F_A = F * invert(F_B_old);
-    Tensor<2, dim> F_C = F_B_old * invert(F_D_old);
-    SymmetricTensor<2, dim> E_C = HenckyStrain(F_C);
-    SymmetricTensor<2, dim> S_C = 2 * G_0 * E_C;
-    SymmetricTensor<2, dim> T_C = (1/J) * symmetrize(F_A * S_C * transpose(F_A));
-    SymmetricTensor<2, dim> T_B = T_A - T_C;
-    SymmetricTensor<2, dim> T_B_dev = deviator(T_B);
-    SymmetricTensor<2, dim> N_B = T_B_dev / sqrt(T_B_dev * T_B_dev);
-
-    double f_R = 
-        pow(alpha, 2)
-      / pow(alpha + sqrt(trace(symmetrize(F_B_old * transpose(F_B_old))))/3 - 1, 2);
-
-    double gamma_dot_B = gamma_dot_0
-                       * f_R
-                       * pow(sqrt(T_B_dev * T_B_dev) / (sqrt(2) * sigma_0) , np);
-
-    SymmetricTensor<2, dim> D_tilde_B = gamma_dot_B * N_B;
-
-    Tensor<2, dim> F_B_dot = invert(F_A) * D_tilde_B * F;
-    Tensor<2, dim> F_B_new = F_B_trial + F_B_dot * delta_t;
-
-    F_B_new = F_B_new * pow(determinant(F_B_new), -1/3);
-
-    return F_B_new;
-}
-
-template <int dim>
-Tensor<2, dim> calculate_new_F_D(Tensor<2, dim> F_B_old,
-                                 Tensor<2, dim> F_D_old,
-                                 Tensor<2, dim> F_D_trial,
-                                 double delta_t) {
-
-    Tensor<2, dim> F_C = F_B_old * invert(F_D_old);
-
-    SymmetricTensor<2, dim> E_C = HenckyStrain(F_C);
-    SymmetricTensor<2, dim> E_E = HenckyStrain(F_D_old);
-    SymmetricTensor<2, dim> S_C = 2 * G_0 * E_C;
-    SymmetricTensor<2, dim> S_E = 2 * G_infinity * E_E;
-    SymmetricTensor<2, dim> S_D = S_C - symmetrize(F_C * S_E * transpose(F_C));
-    SymmetricTensor<2, dim> D_tilde_D = S_D / (sqrt(2) * eta);
-
-    Tensor<2, dim> F_D_dot = invert(F_C) * D_tilde_D * F_B_old;
-    Tensor<2, dim> F_D_new = F_D_trial + F_D_dot * delta_t;
-
-    F_D_new = F_D_new * pow(determinant(F_D_new), -1/3);
-
-    return F_D_new;
-
-}
-// Function required for constitutive update end
 
 template <int dim>
 void Problem<dim>::update_quadrature_point_data (
-    Tensor<2, 3> F, // Deformation gradient
-    std::shared_ptr<PointHistory<dim>> point_history) {
+    Tensor<2, dim> F, // Deformation gradient
+    std::shared_ptr<PointHistory<dim>> point_history,
+    unsigned int q) {
+
+    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+
+    // Volumetric response is purely elastic
+    double J = determinant(F);
+    SymmetricTensor<2, dim> T_A_vol = K * log(J) * I;
 
     // Final, converged values of the viscous strain tensors F_B and F_D
     Tensor<2, dim> F_B;
@@ -1155,32 +1111,45 @@ void Problem<dim>::update_quadrature_point_data (
 
     // Trial elastic state. Assume no viscous flow and these strain tensors
     // just take their values from the previous time step.
-    Tensor<2, dim> F_B_trial;
-    Tensor<2, dim> F_D_trial;
+    Tensor<2, dim> F_B_trial = point_history->F_B;
+    Tensor<2, dim> F_D_trial = point_history->F_D;
 
-    // The tensors *old, *new_1 and *new_2 are related to different estimates
-    // of the tensors F_B and F_D within the iteration loop
-    Tensor<2, dim> F_B_old;
-    Tensor<2, dim> F_D_old;
+    // The tensors *old, *new and are related to different estimates of the
+    // tensors F_B and F_D within the iteration loop
+    Tensor<2, dim> F_B_old = F_B_trial;
+    Tensor<2, dim> F_D_old = F_D_trial;
+    Tensor<2, dim> F_B_new;
+    Tensor<2, dim> F_D_new;
 
-    Tensor<2, dim> F_B_new_1;
-    Tensor<2, dim> F_D_new_1;
+    // Estimates of the rates of change of the tensors F_B and F_D
+    Tensor<2, dim> F_B_dot;
+    Tensor<2, dim> F_D_dot;
 
-    Tensor<2, dim> F_B_new_2;
-    Tensor<2, dim> F_D_new_2;
+    // List of the other tensors and scalars involved in the constitutive update
+    double lambda;
+    double f_R;
+    double gamma_dot_B;
 
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+    Tensor<2, dim> F_A; 
+    Tensor<2, dim> F_C;
 
-    // Volumetric response is assumed to be purely elastic
-    double J = determinant(F);
-    SymmetricTensor<2, dim> T_A_vol = K * log(J) * I;
+    SymmetricTensor<2, dim> B_bar_A;
+    SymmetricTensor<2, dim> T_A_dev;
+    SymmetricTensor<2, dim> T_A;
+    SymmetricTensor<2, dim> E_C;
+    SymmetricTensor<2, dim> S_C;
+    SymmetricTensor<2, dim> T_C;
+    SymmetricTensor<2, dim> T_B;
+    SymmetricTensor<2, dim> T_B_dev;
+    SymmetricTensor<2, dim> N_B;
+    SymmetricTensor<2, dim> D_tilde_B;
+    SymmetricTensor<2, dim> E_E;
+    SymmetricTensor<2, dim> S_E;
+    SymmetricTensor<2, dim> S_D;
+    SymmetricTensor<2, dim> D_tilde_D;
 
-    // Trial elastic state for the deviatoric response
-    F_B_trial = point_history->F_B;
-    F_D_trial = point_history->F_D;
-
-    F_B_old = F_B_trial;
-    F_D_old = F_D_trial;
+    // Spatial tangent modulus
+    SymmetricTensor<4, dim> Jc;
 
     // Set the iteration counter for the consituttive update to zero
     int local_iterations = 0;
@@ -1188,31 +1157,77 @@ void Problem<dim>::update_quadrature_point_data (
     // Start of constitutive integration loop
     while (true) {
 
-        F_B_new_1 = calculate_new_F_B(F, F_B_old, F_D_old, F_B_trial, T_A_vol, delta_t);
-        F_D_new_1 = calculate_new_F_D(F_B_old, F_D_old, F_D_trial, delta_t);
-        F_B_new_2 = calculate_new_F_B(F, F_B_new_1, F_D_new_1, F_B_trial, T_A_vol, delta_t);
+        // Compute T_A
+        F_A     = F * invert(F_B_old);
+        B_bar_A = pow(J, -2/3) * symmetrize(F_A * transpose(F_A));
+        lambda  = sqrt(trace(B_bar_A) / 3);
+        T_A_dev = (mu_0 / J)
+                * (lambda_L / lambda)
+                * inverse_Langevin(lambda / lambda_L)
+                * deviator(B_bar_A);
+        T_A     = T_A_vol + T_A_dev;
 
-        // The loop halts if the estimate of F_B does not change much. If
-        // F_B_new_2 is pretty much the same things as F_D_new_1, there is no
-        // point in re-calculating F_D.
-        if ((F_B_new_2 - F_B_new_1).norm() < 1e-30) {
+        // Compute T_C
+        F_C = F_B_old * invert(F_D_old);
+        E_C = HenckyStrain(F_C);
+        S_C = 2 * G_0 * E_C;
+        T_C = (1/J) * symmetrize(F_A * S_C * transpose(F_A));
 
-            F_B = F_B_new_1;
-            F_D = F_D_new_1;
+        // Compute stresses for element B and direction of driving stress
+        T_B     = T_A - T_C;
+        T_B_dev = deviator(T_B);
+        N_B     = T_B_dev / sqrt(T_B_dev * T_B_dev);
+
+        // Compute rate for F_B
+        f_R = pow(alpha, 2)
+            / pow(alpha + sqrt(trace(F_B_old * transpose(F_B_old))/3) - 1, 2);
+
+        gamma_dot_B = gamma_dot_0
+                    * f_R
+                    * pow(sqrt(T_B_dev * T_B_dev) / (sqrt(2) * sigma_0) , np);
+        D_tilde_B   = gamma_dot_B * N_B;
+        F_B_dot     = invert(F_A) * D_tilde_B * F;
+
+        // Compute new F_B
+        F_B_new = F_B_trial + F_B_dot * delta_t;
+        F_B_new = F_B_new * pow(determinant(F_B_new), -1/3);
+
+        // Computer S_E
+        E_E       = HenckyStrain(F_D_old);
+        S_E       = 2 * G_infinity * E_E;
+        S_D       = S_C - symmetrize(F_C * S_E * transpose(F_C));
+        D_tilde_D = S_D / (sqrt(2) * eta);
+
+        // Compute new F_D
+        F_D_dot = invert(F_C) * D_tilde_D * F_B;
+        F_D_new = F_D_trial + F_D_dot * delta_t;
+        F_D_new = F_D_new * pow(determinant(F_D_new), -1/3);
+
+        if ((F_B_new - F_B_old).norm() < 1e-15
+            and
+            (F_D_new - F_D_old).norm() < 1e-15) {
+
+            F_B = F_B_new;
+            F_D = F_D_new;
+
+            Jc = compute_deviatoric_tangent_modulus(
+                point_history->deformation_gradient,
+                F
+            );
+
             break;
 
         } else {
 
-            F_D_new_2 = calculate_new_F_D(F_B_new_2, F_D_new_1, F_D_trial, delta_t);
-
-            F_B_old = F_B_new_2;
-            F_D_old = F_D_new_2;
+            F_B_old = F_B_new;
+            F_D_old = F_D_new;
 
         }
 
         ++local_iterations;
 
         if (local_iterations == max_no_of_local_iterations) {
+
             std::cout << "Too many constitutive update iterations."
                       << "Exiting program."
                       << std::endl;
@@ -1222,14 +1237,10 @@ void Problem<dim>::update_quadrature_point_data (
 
     } // End of constitutive integration loop
 
-    SymmetricTensor<2, dim> T_A_dev = calculate_T_A_dev(F, F_B);
-
-    SymmetricTensor<2, dim> T_A = T_A_dev + T_A_vol;
-
-    SymmetricTensor<4, dim> C;
-    // Spatial tangent modulus * determinant(F)
-    SymmetricTensor<4, dim>
-    Jc = Physics::Transformations::Contravariant::push_forward(C, F);
+    /*if (q == 0) {*/
+    /*    text_output_file*/
+    /*        << T_A[1][2] << "\n";*/
+    /*}*/
 
     // Update variables needed for constitutive update
     point_history->F_B = F_B;
@@ -1281,13 +1292,9 @@ void Problem<dim>::update_all_history_data () {
 
             update_quadrature_point_data(
                 F,
-                quadrature_point_history_data[q]
+                quadrature_point_history_data[q],
+                q
             );
-
-            /*quadrature_point_history_data[q]->deformation_gradient = F;*/
-            /*quadrature_point_history_data[q]->kirchhoff_stress = Js;*/
-            /*quadrature_point_history_data[q]->tangent_modulus = Jc;*/
-
         }
     }
 }    
@@ -1572,13 +1579,13 @@ void Problem<dim>::output_results () {
     data_out.build_patches(q_mapping, fe.degree);;
 
     std::string output_file_name = 
-            "solution_uniaxial_compression/solution-" 
+            "solution/solution-" 
             + std::to_string(step_number)
             + ".vtu";
 
     std::ofstream output_file(output_file_name);
 
-    data_out.write_vtu (output_file);
+    data_out.write_vtu(output_file);
 
     std::cout << "\nResults written" << std::endl;
 }
