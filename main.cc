@@ -115,10 +115,14 @@ class Problem {
         void solve_linear_system();
         void update_all_history_data();
 
-        void update_quadrature_point_data (
+        void compute_updated_quadrature_point_data (
             Tensor<2, dim> F, // Deformation gradient
             std::shared_ptr<PointHistory<dim>> point_history,
-            unsigned int q
+            unsigned int q,
+            // Output variables :
+            Tensor<2, dim> &F_B,
+            Tensor<2, dim> &F_D,
+            SymmetricTensor<2, dim> &T_A
         );
 
         void perform_L2_projections();
@@ -1045,20 +1049,21 @@ SymmetricTensor<2, dim> HenckyStrain(Tensor<2, dim> F) {
 }
 
 template <int dim>
-void Problem<dim>::update_quadrature_point_data (
+void Problem<dim>::compute_updated_quadrature_point_data (
     Tensor<2, dim> F, // Deformation gradient
     std::shared_ptr<PointHistory<dim>> point_history,
-    unsigned int q) {
+    [[maybe_unused]] unsigned int q,
+    // Output variables :
+    Tensor<2, dim> &F_B,
+    Tensor<2, dim> &F_D,
+    SymmetricTensor<2, dim> &T_A
+) {
 
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 
     // Volumetric response is purely elastic
     double J = determinant(F);
     SymmetricTensor<2, dim> T_A_vol = K * log(J) * I;
-
-    // Final, converged values of the viscous strain tensors F_B and F_D
-    Tensor<2, dim> F_B;
-    Tensor<2, dim> F_D;
 
     // Trial elastic state. Assume no viscous flow and these strain tensors
     // just take their values from the previous time step.
@@ -1086,7 +1091,7 @@ void Problem<dim>::update_quadrature_point_data (
 
     SymmetricTensor<2, dim> B_bar_A;
     SymmetricTensor<2, dim> T_A_dev;
-    SymmetricTensor<2, dim> T_A;
+    /*SymmetricTensor<2, dim> T_A;*/
     SymmetricTensor<2, dim> E_C;
     SymmetricTensor<2, dim> S_C;
     SymmetricTensor<2, dim> T_C;
@@ -1158,7 +1163,7 @@ void Problem<dim>::update_quadrature_point_data (
             F_B = F_B_new;
             F_D = F_D_new;
 
-            break;
+            return;
 
         } else {
 
@@ -1180,14 +1185,13 @@ void Problem<dim>::update_quadrature_point_data (
 
     } // End of constitutive integration loop
 
-    // Update variables needed for constitutive update
-    point_history->F_B = F_B;
-    point_history->F_D = F_D;
-
-    // Update variables needed for global evolution equations
-    point_history->deformation_gradient = F;
-    point_history->kirchhoff_stress = J * T_A;
-    point_history->tangent_modulus = Jc;
+    /*// Update variables needed for constitutive update*/
+    /*point_history->F_B = F_B;*/
+    /*point_history->F_D = F_D;*/
+    /**/
+    /*// Update variables needed for global evolution equations*/
+    /*point_history->deformation_gradient = F;*/
+    /*point_history->kirchhoff_stress = J * T_A;*/
 
 }
 
@@ -1199,8 +1203,8 @@ void Problem<dim>::update_all_history_data () {
     // number of quadrature points in a cell. Each of the inner vectors is a
     // list of dim elements of type Tensor<1, dim>.
     std::vector<std::vector<Tensor<1, dim>>> solution_gradients(
-                                                quadrature_formula.size(),
-                                                std::vector<Tensor<1, dim>>(dim));
+                                             quadrature_formula.size(),
+                                             std::vector<Tensor<1, dim>>(dim));
 
     Tensor<2, dim> 
     dUdX, // Gradient of displacement wrt reference coordinates
@@ -1208,6 +1212,12 @@ void Problem<dim>::update_all_history_data () {
 
     // Temporary structure for holding the quadrature point data
     std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+
+    // Variables for retrieving history variables and Cauchy stress from the
+    // integration point level calculations.
+    Tensor<2, dim> F_B;
+    Tensor<2, dim> F_D;
+    SymmetricTensor<2, dim> T_A;
 
     for (auto &cell : dof_handler.active_cell_iterators()) {
 
@@ -1228,11 +1238,22 @@ void Problem<dim>::update_all_history_data () {
 
             F = Physics::Elasticity::Kinematics::F(dUdX);
 
-            update_quadrature_point_data(
+            quadrature_point_history_data[q]->deformation_gradient = F;
+
+            compute_updated_quadrature_point_data(
                 F,
                 quadrature_point_history_data[q],
-                q
+                q,
+                // Output variables :
+                F_B,
+                F_D,
+                T_A
             );
+
+            // Update the history variables and the stress state
+            quadrature_point_history_data[q]->F_B = F_B;
+            quadrature_point_history_data[q]->F_D = F_D;
+            quadrature_point_history_data[q]->kirchhoff_stress = determinant(F) * T_A;
         }
     }
 }    
