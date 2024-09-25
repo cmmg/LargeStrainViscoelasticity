@@ -1045,55 +1045,6 @@ SymmetricTensor<2, dim> HenckyStrain(Tensor<2, dim> F) {
 }
 
 template <int dim>
-SymmetricTensor<4, dim> compute_deviatoric_tangent_modulus(
-    Tensor<2, dim> F_old, // Deformation gradient of the previous time step
-    Tensor<2, dim> F_new  // Deformation gradient of the current time step
-) {
-
-    // This function calculates the tangent modulus of the model by perturbing
-    // the deformation gradient and using the the stress integration scheme to
-    // calculate the difference in the stress caused by a perturbation of the
-    // deformation gradient.
-
-    // Calculation of the perturbation amount
-    Tensor<2, dim> f = F_new * invert(F_old);
-    double epsilon = f.norm() / 100;
-
-    Tensor<2, dim> perturbation;
-
-    Tensor<2, dim> F_perturbed;
-    SymmetricTensor<4, dim> Jc;
-
-    // Loop for computing the deviatoric part of the tangent modulus. Since the
-    // volumetric response is purely elastic, the volumetric part of the
-    // tangent modulus may be computed in a single step.
-    for (int i = 0; i < 3; ++i) {
-
-        perturbation = 0;
-
-        if (i == 0) {
-            perturbation[0][1] = epsilon / 2;
-            perturbation[1][0] = epsilon / 2;
-        }
-
-        if (i == 1) {
-            perturbation[0][2] = epsilon / 2;
-            perturbation[2][0] = epsilon / 2;
-        }
-
-        if (i == 2) {
-            perturbation[1][2] = epsilon / 2;
-            perturbation[2][1] = epsilon / 2;
-        }
-
-        F_perturbed = F_new + perturbation * F_new
-
-    }
-
-    return Jc;
-}
-
-template <int dim>
 void Problem<dim>::update_quadrature_point_data (
     Tensor<2, dim> F, // Deformation gradient
     std::shared_ptr<PointHistory<dim>> point_history,
@@ -1147,9 +1098,6 @@ void Problem<dim>::update_quadrature_point_data (
     SymmetricTensor<2, dim> S_E;
     SymmetricTensor<2, dim> S_D;
     SymmetricTensor<2, dim> D_tilde_D;
-
-    // Spatial tangent modulus
-    SymmetricTensor<4, dim> Jc;
 
     // Set the iteration counter for the consituttive update to zero
     int local_iterations = 0;
@@ -1210,11 +1158,6 @@ void Problem<dim>::update_quadrature_point_data (
             F_B = F_B_new;
             F_D = F_D_new;
 
-            Jc = compute_deviatoric_tangent_modulus(
-                point_history->deformation_gradient,
-                F
-            );
-
             break;
 
         } else {
@@ -1236,11 +1179,6 @@ void Problem<dim>::update_quadrature_point_data (
         }
 
     } // End of constitutive integration loop
-
-    /*if (q == 0) {*/
-    /*    text_output_file*/
-    /*        << T_A[1][2] << "\n";*/
-    /*}*/
 
     // Update variables needed for constitutive update
     point_history->F_B = F_B;
