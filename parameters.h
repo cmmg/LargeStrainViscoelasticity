@@ -13,3 +13,4 @@
 #define eta 60000 // Viscosity for element D
 #define gamma_dot_0 1e-4 // Dimensionless scaling constant
 #define alpha 0.005 // For singularity removal
+#define f_1 0.8 // Incompressible fraction of volume to account for fluid

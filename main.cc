@@ -25,7 +25,6 @@
 
 // Boundary conditions
 #include <deal.II/numerics/vector_tools.h>
-/*#include <deal.II/numerics/matrix_tools.h>*/
 
 // Graphical output
 #include <deal.II/numerics/data_out.h>
@@ -33,9 +32,10 @@
 
 #include <iostream>
 
-#include "parameters.h"
-
 using namespace dealii;
+
+#include "parameters.h"
+#include "mechanics.h"
 
 template <int dim>
 class PointHistory {
@@ -50,6 +50,8 @@ class PointHistory {
             // Initialize viscoelasticity variables
             F_B = I;
             F_D = I;
+
+            tangent_modulus = compute_tangent_modulus(deformation_gradient);
 
         }
 
@@ -98,7 +100,7 @@ void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
     // The variable name p has been commented out to avoid compiler warnings
     // about unused variables
     values = 0;
-    values(1) = speed * current_time;
+    values(2) = - speed * current_time;
 }
 
 template <int dim>
@@ -122,7 +124,8 @@ class Problem {
             // Output variables :
             Tensor<2, dim> &F_B,
             Tensor<2, dim> &F_D,
-            SymmetricTensor<2, dim> &T_A
+            SymmetricTensor<2, dim> &T_A,
+            SymmetricTensor<4, dim> &Jc
         );
 
         void perform_L2_projections();
@@ -200,7 +203,7 @@ Problem<dim>::Problem () :
     absolute_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
-    total_time(1.2),
+    total_time(5e-3),
     step_number(0),
     max_no_of_NR_iterations(100),
     max_no_of_local_iterations(100),
@@ -283,7 +286,7 @@ void Problem<dim>::run () {
 
         perform_L2_projections();
 
-        output_results();
+        /*output_results();*/
 
     }
 
@@ -402,10 +405,10 @@ void Problem<dim>::generate_boundary_conditions () {
 
     */
 
-    bool constrained_shear_no_lateral_displacement   = true;
+    bool constrained_shear_no_lateral_displacement   = false;
     bool constrained_shear_with_lateral_displacement = false;
     bool pure_shear                                  = false;
-    bool uniaxial_compression                        = false;
+    bool uniaxial_compression                        = true;
 
     // Check that exactly one of the above set of boundary conditions is
     // applied to the domain.
@@ -414,8 +417,8 @@ void Problem<dim>::generate_boundary_conditions () {
         constrained_shear_with_lateral_displacement +
         pure_shear +
         uniaxial_compression
-        == 1
-    )) {
+        == 1)) {
+
         std::cout 
         << "Exactly one of the set of boundary conditions must be applied at point of time."
         << "Exiting program."
@@ -423,14 +426,14 @@ void Problem<dim>::generate_boundary_conditions () {
         exit(0);
     }
 
-    if (constrained_shear_no_lateral_displacement) {
+    // The following are three arrays of boolean values that tell the
+    // interpolate_boundary_values function which component to apply the
+    // boundary values to.
+    const FEValuesExtractors::Scalar x_component(0);
+    const FEValuesExtractors::Scalar y_component(1);
+    const FEValuesExtractors::Scalar z_component(2);
 
-        // The following are three arrays of boolean values that tell the
-        // interpolate_boundary_values function which component to apply the
-        // boundary values to.
-        const FEValuesExtractors::Scalar x_component(0);
-        const FEValuesExtractors::Scalar y_component(1);
-        const FEValuesExtractors::Scalar z_component(2);
+    if (constrained_shear_no_lateral_displacement) {
 
         non_homogenous_constraints.clear();
 
@@ -538,13 +541,6 @@ void Problem<dim>::generate_boundary_conditions () {
 
     if (constrained_shear_with_lateral_displacement) {
 
-        // The following are three arrays of boolean values that tell the
-        // interpolate_boundary_values function which component to apply the
-        // boundary values to.
-        const FEValuesExtractors::Scalar x_component(0);
-        const FEValuesExtractors::Scalar y_component(1);
-        const FEValuesExtractors::Scalar z_component(2);
-
         non_homogenous_constraints.clear();
 
         // The face on the xy plane has boundary indicator of 4 and must be kept
@@ -637,13 +633,6 @@ void Problem<dim>::generate_boundary_conditions () {
 
     if (pure_shear) {
 
-        // The following are three arrays of boolean values that tell the
-        // interpolate_boundary_values function which component to apply the
-        // boundary values to.
-        const FEValuesExtractors::Scalar x_component(0);
-        const FEValuesExtractors::Scalar y_component(1);
-        const FEValuesExtractors::Scalar z_component(2);
-
         non_homogenous_constraints.clear();
 
         // The face on the xy plane has boundary indicator of 4 and must be kept
@@ -721,13 +710,6 @@ void Problem<dim>::generate_boundary_conditions () {
     } // End of pure_shear
 
     if (uniaxial_compression) {
-
-        // The following are three arrays of boolean values that tell the
-        // interpolate_boundary_values function which component to apply the
-        // boundary values to.
-        const FEValuesExtractors::Scalar x_component(0);
-        const FEValuesExtractors::Scalar y_component(1);
-        const FEValuesExtractors::Scalar z_component(2);
 
         non_homogenous_constraints.clear();
 
@@ -841,9 +823,6 @@ void Problem<dim>::assemble_linear_system () {
     Tensor<2, dim> F;    // Deformation gradient
     Tensor<2, dim> Finv; // Inverse of the deformation gradient
 
-    /*SymmetricTensor<2, dim> S; // Second Piola-Kirchhoff stress*/
-    /*SymmetricTensor<4, dim> C; // Tangent modulus in the reference configuration*/
-
     SymmetricTensor<2, dim> Js; // Kirchhoff stress
     SymmetricTensor<4, dim> Jc; // Spatial tangent modulus * determinant(F)
 
@@ -873,9 +852,6 @@ void Problem<dim>::assemble_linear_system () {
             Js = quadrature_point_history_data[q]->kirchhoff_stress;
             Jc = quadrature_point_history_data[q]->tangent_modulus;
 
-            /*Js = Physics::Transformations::Contravariant::push_forward(S, F);*/
-            /*Jc = Physics::Transformations::Contravariant::push_forward(C, F);*/
-
             Finv = invert(F);
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i) {
@@ -894,8 +870,7 @@ void Problem<dim>::assemble_linear_system () {
                         dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
 
                 for (unsigned int di = 0; di < dim; ++di)
-                    cell_rhs(i) +=
-                         -dphidx_i[di] * Js[ci][di] * fe_values.JxW(q);
+                    cell_rhs(i) += -dphidx_i[di] * Js[ci][di] * fe_values.JxW(q);
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j) {
 
@@ -930,9 +905,6 @@ void Problem<dim>::assemble_linear_system () {
             } // End of i loop
         } // End of quadrature loop
 
-        /*std::cout << "Iterations : " << iterations << "\n";*/
-        /*std::cout << "cell rhs : " << cell_rhs << "\n";*/
-
         // Distribute local contributions to global system
         cell->get_dof_indices(local_dof_indices);
 
@@ -958,14 +930,6 @@ void Problem<dim>::assemble_linear_system () {
                         system_rhs);
 
         }
-
-        /*std::cout << "system rhs : " << system_rhs << "\n";*/
-
-        /*if (true) {*/
-        /*std::cout << "iterations : " << iterations << "\n";*/
-        /*std::cout << "cell_rhs : " << cell_rhs << "\n";*/
-        /*std::cout << "system_rhs : " << system_rhs << "\n";*/
-        /*}*/
 
     } // End of loop over all cells
 
@@ -1008,46 +972,6 @@ void Problem<dim>::solve_linear_system () {
 
 }
 
-// Function required for constitutive update start
-
-double inverse_Langevin(double y) {
-
-    double tmp = y * (3 - pow(y, 2)) / (1 - pow(y, 2));
-
-    return tmp;
-}
-
-template <int dim>
-SymmetricTensor<2, dim> HenckyStrain(Tensor<2, dim> F) {
-
-    SymmetricTensor<2, dim> B = symmetrize(F * transpose(F));
-
-    auto eigen_solution = eigenvectors(B);
-
-    double eigenvalue_1 = eigen_solution[0].first;
-    double eigenvalue_2 = eigen_solution[1].first;
-    double eigenvalue_3 = eigen_solution[2].first;
-
-    Tensor<1, dim> eigenvector_1 = eigen_solution[0].second;
-    Tensor<1, dim> eigenvector_2 = eigen_solution[1].second;
-    Tensor<1, dim> eigenvector_3 = eigen_solution[2].second;
-
-    // Automatically initialized to when created
-    SymmetricTensor<2, dim> E; 
-
-    for (int i = 0; i < dim; ++i) {
-        for (int j = 0; j < dim; ++j) {
-            E[i][j] += 
-                log(sqrt(eigenvalue_1)) * eigenvector_1[i] * eigenvector_1[j]
-              + log(sqrt(eigenvalue_2)) * eigenvector_2[i] * eigenvector_2[j]
-              + log(sqrt(eigenvalue_3)) * eigenvector_3[i] * eigenvector_3[j];
-        }
-    }
-
-    return E;
-
-}
-
 template <int dim>
 void Problem<dim>::compute_updated_quadrature_point_data (
     Tensor<2, dim> F, // Deformation gradient
@@ -1056,14 +980,15 @@ void Problem<dim>::compute_updated_quadrature_point_data (
     // Output variables :
     Tensor<2, dim> &F_B,
     Tensor<2, dim> &F_D,
-    SymmetricTensor<2, dim> &T_A
+    SymmetricTensor<2, dim> &T_A,
+    SymmetricTensor<4, dim> &Jc
 ) {
 
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 
     // Volumetric response is purely elastic
     double J = determinant(F);
-    SymmetricTensor<2, dim> T_A_vol = K * log(J) * I;
+    SymmetricTensor<2, dim> T_A_vol = K * log((J - f_1)/(1 - f_1)) * I;
 
     // Trial elastic state. Assume no viscous flow and these strain tensors
     // just take their values from the previous time step.
@@ -1156,12 +1081,25 @@ void Problem<dim>::compute_updated_quadrature_point_data (
         F_D_new = F_D_trial + F_D_dot * delta_t;
         F_D_new = F_D_new * pow(determinant(F_D_new), -1/3);
 
+        if (local_iterations == max_no_of_local_iterations) {
+
+            std::cout << "Too many constitutive update iterations."
+                      << "Exiting program."
+                      << std::endl;
+
+            exit(0);
+        }
+
+        ++local_iterations;
+
         if ((F_B_new - F_B_old).norm() < 1e-15
             and
             (F_D_new - F_D_old).norm() < 1e-15) {
 
             F_B = F_B_new;
             F_D = F_D_new;
+
+            Jc = compute_tangent_modulus(F_A);
 
             return;
 
@@ -1172,26 +1110,7 @@ void Problem<dim>::compute_updated_quadrature_point_data (
 
         }
 
-        ++local_iterations;
-
-        if (local_iterations == max_no_of_local_iterations) {
-
-            std::cout << "Too many constitutive update iterations."
-                      << "Exiting program."
-                      << std::endl;
-
-            exit(0);
-        }
-
     } // End of constitutive integration loop
-
-    /*// Update variables needed for constitutive update*/
-    /*point_history->F_B = F_B;*/
-    /*point_history->F_D = F_D;*/
-    /**/
-    /*// Update variables needed for global evolution equations*/
-    /*point_history->deformation_gradient = F;*/
-    /*point_history->kirchhoff_stress = J * T_A;*/
 
 }
 
@@ -1218,6 +1137,7 @@ void Problem<dim>::update_all_history_data () {
     Tensor<2, dim> F_B;
     Tensor<2, dim> F_D;
     SymmetricTensor<2, dim> T_A;
+    SymmetricTensor<4, dim> Jc;
 
     for (auto &cell : dof_handler.active_cell_iterators()) {
 
@@ -1247,13 +1167,15 @@ void Problem<dim>::update_all_history_data () {
                 // Output variables :
                 F_B,
                 F_D,
-                T_A
+                T_A,
+                Jc
             );
 
             // Update the history variables and the stress state
             quadrature_point_history_data[q]->F_B = F_B;
             quadrature_point_history_data[q]->F_D = F_D;
             quadrature_point_history_data[q]->kirchhoff_stress = determinant(F) * T_A;
+            quadrature_point_history_data[q]->tangent_modulus = Jc;
         }
     }
 }    
