@@ -51,7 +51,7 @@ class PointHistory {
             F_B = I;
             F_D = I;
 
-            tangent_modulus = compute_tangent_modulus(deformation_gradient);
+            tangent_modulus = compute_tangent_modulus(deformation_gradient, deformation_gradient);
 
         }
 
@@ -203,9 +203,9 @@ Problem<dim>::Problem () :
     absolute_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
-    total_time(5e-3),
+    total_time(0.4),
     step_number(0),
-    max_no_of_NR_iterations(100),
+    max_no_of_NR_iterations(20),
     max_no_of_local_iterations(100),
     text_output_file("text_output_file.txt")
     {}
@@ -217,9 +217,14 @@ void Problem<dim>::run () {
     perform_L2_projections();
     output_results(); // Output the initial state of the system to the output file
 
+    solution = 0.0;
+
     while (current_time < total_time) {
 
         current_time += delta_t; 
+
+        if (current_time > total_time) current_time = total_time;
+
         step_number++;
 
         std::cout << "\n"
@@ -232,13 +237,12 @@ void Problem<dim>::run () {
 
         // Generate homogenous and non homogenous boundary conditions for the
         // current increment
+
         generate_boundary_conditions();
 
         // Calculations of the zeroth iteration of the increment are used to set
         // the initial norm of the residual to be used for the convergence
         // criterion.
-
-        solution = 0.0;
 
         assemble_linear_system();
         calculate_residual_norm();
@@ -265,14 +269,12 @@ void Problem<dim>::run () {
                 exit(0);
             }
 
-            if (residual_norm / initial_residual_norm < relative_tolerance
-                or
-                residual_norm < absolute_tolerance) {
+            if (residual_norm / initial_residual_norm < relative_tolerance) {
                 std::cout 
                     << "Step converged in " 
                     << iterations 
                     << " iteration(s)." 
-                    << std::endl;;
+                    << std::endl;
 
                 break;
             }
@@ -297,8 +299,47 @@ void Problem<dim>::setup_system () {
     std::cout << "-- Setting up\n" << std::endl;
 
     // Generate mesh
-    GridGenerator::hyper_cube(triangulation);
+    double cube_size = 5;
+    double length = cube_size;
+    double width = cube_size;
+    double height = cube_size;
+    GridGenerator::hyper_rectangle(triangulation, 
+                                   Point<dim>(0, 0, 0),
+                                   Point<dim>(length, width, height));
+
+    // Set boundary indices. The following boundary indexing assumes that the
+    // domain is a cube of edge length 1 with sides parallel to and on the 3
+    // coordinate planes.
+
+    for (const auto &cell : triangulation.active_cell_iterators()) {
+        for (const auto &face : cell->face_iterators()) {
+            if (face->at_boundary()) {
+                const Point<dim> face_center = face->center();
+
+                // Face on the yz plane
+                if(face_center[0] == 0) face->set_boundary_id(0);
+
+                // Face opposite the yz plane
+                if(face_center[0] == length) face->set_boundary_id(1);
+
+                // Face on the xz plane
+                if(face_center[1] == 0) face->set_boundary_id(2);
+
+                // Face opposite the xz plane
+                if(face_center[1] == width) face->set_boundary_id(3);
+
+                // Face on the xy plane
+                if(face_center[2] == 0) face->set_boundary_id(4);
+
+                // Face opposite the xy plane
+                if(face_center[2] == height) face->set_boundary_id(5);
+
+            }
+        }
+    }
+
     /*triangulation.refine_global(1);*/
+
     dof_handler.distribute_dofs(fe);
 
     // Make space for all the history variables of the system
@@ -332,37 +373,6 @@ void Problem<dim>::setup_system () {
                                 false);
     sparsity_pattern_L2.copy_from(dsp_L2);
     mass_matrix_L2.reinit(sparsity_pattern_L2);
-
-    // Set boundary indices. The following boundary indexing assumes that the
-    // domain is a cube of edge length 1 with sides parallel to and on the 3
-    // coordinate planes.
-
-    for (const auto &cell : triangulation.active_cell_iterators()) {
-        for (const auto &face : cell->face_iterators()) {
-            if (face->at_boundary()) {
-                const Point<dim> face_center = face->center();
-
-                // Face on the yz plane
-                if(face_center[0] == 0) face->set_boundary_id(0);
-
-                // Face opposite the yz plane
-                if(face_center[0] == 1) face->set_boundary_id(1);
-
-                // Face on the xz plane
-                if(face_center[1] == 0) face->set_boundary_id(2);
-
-                // Face opposite the xz plane
-                if(face_center[1] == 1) face->set_boundary_id(3);
-
-                // Face on the xy plane
-                if(face_center[2] == 0) face->set_boundary_id(4);
-
-                // Face opposite the xy plane
-                if(face_center[2] == 1) face->set_boundary_id(5);
-
-            }
-        }
-    }
 
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
@@ -424,6 +434,7 @@ void Problem<dim>::generate_boundary_conditions () {
         << "Exiting program."
         << std::endl;
         exit(0);
+
     }
 
     // The following are three arrays of boolean values that tell the
@@ -474,7 +485,7 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                     dof_handler,
                     5,
-                    VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                    VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),
                     non_homogenous_constraints,
                     fe.component_mask(y_component));
 
@@ -573,7 +584,7 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                         dof_handler,
                         5,
-                        VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                        VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),
                         non_homogenous_constraints,
                         fe.component_mask(y_component));
 
@@ -665,7 +676,7 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                         dof_handler,
                         5,
-                        VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                        VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),
                         non_homogenous_constraints,
                         fe.component_mask(y_component));
 
@@ -746,7 +757,8 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                         dof_handler,
                         5,
-                        VelocityBoundaryCondition<dim>(current_time, top_surface_speed),
+                        /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
+                        Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
                         non_homogenous_constraints,
                         fe.component_mask(z_component));
 
@@ -848,7 +860,7 @@ void Problem<dim>::assemble_linear_system () {
         // Quadrature loop for current cell and degrees of freedom i, j
         for (unsigned int q = 0; q < n_quadrature_points; ++q) {
 
-            F = quadrature_point_history_data[q]->deformation_gradient;
+            F  = quadrature_point_history_data[q]->deformation_gradient;
             Js = quadrature_point_history_data[q]->kirchhoff_stress;
             Jc = quadrature_point_history_data[q]->tangent_modulus;
 
@@ -917,6 +929,18 @@ void Problem<dim>::assemble_linear_system () {
                         local_dof_indices,
                         system_matrix,
                         system_rhs);
+
+            if(step_number == 1) {
+                text_output_file 
+                << "cell_rhs : " << cell_rhs << "\n"
+                << "system_rhs : " << system_rhs << "\n";
+                text_output_file << "cell_matrix : "; 
+                cell_matrix.print_formatted(text_output_file);
+                text_output_file << std::endl;
+                text_output_file << "system_matrix : ";
+                system_matrix.print(text_output_file);
+            }
+
         } else {
             // Non-homogenous boundary conditions will be satisfied in the
             // first iteration of the increment. No need to change the
@@ -976,8 +1000,8 @@ template <int dim>
 void Problem<dim>::compute_updated_quadrature_point_data (
     Tensor<2, dim> F, // Deformation gradient
     std::shared_ptr<PointHistory<dim>> point_history,
-    [[maybe_unused]] unsigned int q,
-    // Output variables :
+    [[maybe_unused]] unsigned int q, // For debugging 
+    // Output variables all imported by reference
     Tensor<2, dim> &F_B,
     Tensor<2, dim> &F_D,
     SymmetricTensor<2, dim> &T_A,
@@ -985,10 +1009,6 @@ void Problem<dim>::compute_updated_quadrature_point_data (
 ) {
 
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
-
-    // Volumetric response is purely elastic
-    double J = determinant(F);
-    SymmetricTensor<2, dim> T_A_vol = K * log((J - f_1)/(1 - f_1)) * I;
 
     // Trial elastic state. Assume no viscous flow and these strain tensors
     // just take their values from the previous time step.
@@ -1032,6 +1052,10 @@ void Problem<dim>::compute_updated_quadrature_point_data (
     // Set the iteration counter for the consituttive update to zero
     int local_iterations = 0;
 
+    // Volumetric response is purely elastic
+    double J = determinant(F);
+    SymmetricTensor<2, dim> T_A_vol = K * log((J - f_1)/(1 - f_1)) * I;
+
     // Start of constitutive integration loop
     while (true) {
 
@@ -1070,16 +1094,16 @@ void Problem<dim>::compute_updated_quadrature_point_data (
         F_B_new = F_B_trial + F_B_dot * delta_t;
         F_B_new = F_B_new * pow(determinant(F_B_new), -1/3);
 
-        // Computer S_E
-        E_E       = HenckyStrain(F_D_old);
-        S_E       = 2 * G_infinity * E_E;
-        S_D       = S_C - symmetrize(F_C * S_E * transpose(F_C));
-        D_tilde_D = S_D / (sqrt(2) * eta);
+        // Computer S_E and S_D
+        E_E = HenckyStrain(F_D_old);
+        S_E = 2 * G_infinity * E_E;
+        S_D = S_C - symmetrize(F_C * S_E * transpose(F_C));
 
         // Compute new F_D
-        F_D_dot = invert(F_C) * D_tilde_D * F_B;
-        F_D_new = F_D_trial + F_D_dot * delta_t;
-        F_D_new = F_D_new * pow(determinant(F_D_new), -1/3);
+        D_tilde_D = S_D / (sqrt(2) * eta);
+        F_D_dot   = invert(F_C) * D_tilde_D * F_B;
+        F_D_new   = F_D_trial + F_D_dot * delta_t;
+        F_D_new   = F_D_new * pow(determinant(F_D_new), -1/3);
 
         if (local_iterations == max_no_of_local_iterations) {
 
@@ -1099,7 +1123,7 @@ void Problem<dim>::compute_updated_quadrature_point_data (
             F_B = F_B_new;
             F_D = F_D_new;
 
-            Jc = compute_tangent_modulus(F_A);
+            Jc = compute_tangent_modulus(F, F_A);
 
             return;
 
@@ -1176,7 +1200,9 @@ void Problem<dim>::update_all_history_data () {
             quadrature_point_history_data[q]->F_D = F_D;
             quadrature_point_history_data[q]->kirchhoff_stress = determinant(F) * T_A;
             quadrature_point_history_data[q]->tangent_modulus = Jc;
-        }
+
+        } // End of loop over quadrature points
+
     }
 }    
 
@@ -1380,8 +1406,6 @@ void Problem<dim>::perform_L2_projections () {
     nodal_output_L2.push_back(sigma_yy_projection_L2);
     nodal_output_L2.push_back(sigma_yz_projection_L2);
     nodal_output_L2.push_back(sigma_zz_projection_L2);
-
-    /*std::cout << sigma_zz_projection_L2 << std::endl;*/
 
 }
 
