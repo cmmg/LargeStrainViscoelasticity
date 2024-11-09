@@ -1,32 +1,78 @@
-double inverse_Langevin(double y) {
+template <int dim>
+class Material {
 
-    double a = 36/35;
-    double b = 33/35;
+    public:
 
-    return y * (3 - a * pow(y, 2)) / (1 - b * pow(y, 2));
+        Material();
+        ~Material();
 
-}
+        void perform_constitutive_update(double delta_t);
+        void compute_spatial_tangent_modulus(double delta_t);
 
-double d_inverse_Langevin_dy(double y) {
-    // Derivative of the approximation of the inverse Langevin function with
-    // respect to its argument
+        Tensor<2, dim>          deformation_gradient; 
+        SymmetricTensor<2, dim> kirchhoff_stress;
+        SymmetricTensor<4, dim> spatial_tangent_modulus;
 
-    double a = 36/35;
-    double b = 33/35;
+    private:
 
-    double numerator   = a * b * pow(y, 4) + 3 * (b - a) * pow(y, 2) + 3;
-    double denominator = pow(b * y * y - 1, 2);
+        // History variables
+        Tensor<2, dim> F_B;
+        Tensor<2, dim> F_D;
 
-    return numerator / denominator;
+        // Material parameters
+        double K = 800.0; // Bulk modulus
+        double f_1 = 0.8; // Volume fraction of moisture in brain tissue
+        double mu_0 = 20.0; // Shear modulus
+        double lambda_L = 1.09; // Maximum stretch
+        double sigma_0 = 2; // Strength parameter for viscous stretch rate
+        double n = 1; // Exponent for viscous flow rule
+        double G_0 = 4500.0; // Elastic modulus for element C
+        double G_infinity = 600.0; // Elastic modulus for element E
+        double eta = 60000.0; // Viscosity for element D
+        double gamma_dot_0 = 1e-4; // Dimensionless scaling constant
+        /*double gamma_dot_0 = 0.0; // Dimensionless scaling constant*/
+        double alpha = 0.005; // For removing singularity in flow rule
+        
+        std::ofstream self_output_file;
+
+        double inverse_Langevin(double y);
+        double d_inverse_Langevin_dy(double y);
+
+        SymmetricTensor<2, dim> compute_deviatoric_stress(SymmetricTensor<2, dim> B_A_bar);
+        SymmetricTensor<2, dim> hencky_strain(Tensor<2, dim> F);
+        SymmetricTensor<2, dim> square_root(SymmetricTensor<2, dim> B);
+        SymmetricTensor<2, dim> multiply_symmetric_tensors(SymmetricTensor<2, dim> A, SymmetricTensor<2, dim> B);
+};
+
+template <int dim>
+Material<dim>::Material() {
+
+    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+
+    deformation_gradient = I;
+    kirchhoff_stress = 0;
+    spatial_tangent_modulus = 0;
+
+    F_B = I;
+    F_D = I;
+
+    self_output_file.open("self_output_file.txt");
+
 }
 
 template <int dim>
-SymmetricTensor<2, dim> HenckyStrain(Tensor<2, dim> F) {
+Material<dim>::~Material() {
+
+    self_output_file.close();
+
+}
+
+template <int dim>
+SymmetricTensor<2, dim> Material<dim>::hencky_strain(Tensor<2, dim> F) {
 
     SymmetricTensor<2, dim> B = symmetrize(F * transpose(F));
 
-    auto eigen_solution = eigenvectors(B,
-                                       SymmetricTensorEigenvectorMethod::jacobi);
+    auto eigen_solution = eigenvectors(B, SymmetricTensorEigenvectorMethod::jacobi);
 
     double eigenvalue_1 = eigen_solution[0].first;
     double eigenvalue_2 = eigen_solution[1].first;
@@ -53,220 +99,366 @@ SymmetricTensor<2, dim> HenckyStrain(Tensor<2, dim> F) {
 }
 
 template <int dim>
-SymmetricTensor<4, dim> compute_dS_A_dC_A(
-    Tensor<2, dim> F_A // Elastic part of the deformation gradient
-) {
+SymmetricTensor<2, dim> Material<dim>::square_root(SymmetricTensor<2, dim> B) {
 
-    // This function calculates the derivative of the 2nd Piola Kirchhoff
-    // stress S_A with respect to the elastic strain metric C_A.
-    //
-    // S_A = J * F_A^-1 * T_A * F_A^-T
-    // C_A = F_A^T * F_A
-    //
-    // Here, T_A is the Cauchy stress and F_A is the elastic part of the
-    // deformation gradient
+    auto eigen_solution = eigenvectors(B, SymmetricTensorEigenvectorMethod::jacobi);
 
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+    double eigenvalue_1 = eigen_solution[0].first;
+    double eigenvalue_2 = eigen_solution[1].first;
+    double eigenvalue_3 = eigen_solution[2].first;
 
-    // Derivative of the 2nd PK stress with respect to the elasticity metric
-    SymmetricTensor<4, dim> dS_A_dC_A; 
+    Tensor<1, dim> eigenvector_1 = eigen_solution[0].second;
+    Tensor<1, dim> eigenvector_2 = eigen_solution[1].second;
+    Tensor<1, dim> eigenvector_3 = eigen_solution[2].second;
 
-    SymmetricTensor<4, dim> dS_A_dC_A_vol; // Volumetric part of dS_A_dC_A
-    SymmetricTensor<4, dim> dS_A_dC_A_dev; // Deviatoric part of dS_A_dC_A
+    // Automatically initialized to zero when created
+    SymmetricTensor<2, dim> V; 
 
-    // Calculation for dS_A_dC_A_dev starts
+    for (int i = 0; i < dim; ++i) {
+        for (int j = 0; j < dim; ++j) {
+            V[i][j] = 
+                sqrt(eigenvalue_1) * eigenvector_1[i] * eigenvector_1[j]
+              + sqrt(eigenvalue_2) * eigenvector_2[i] * eigenvector_2[j]
+              + sqrt(eigenvalue_3) * eigenvector_3[i] * eigenvector_3[j];
+        }
+    }
 
-    SymmetricTensor<2, dim> dJ_dC     = Physics::Elasticity::StandardTensors<dim>::ddet_F_dC(F_A);
-    SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F_A);
-    SymmetricTensor<4, dim> dC_bar_dC = Physics::Elasticity::StandardTensors<dim>::Dev_P_T(F_A);
-
-    double J = determinant(F_A);
-    SymmetricTensor<2, dim> C_A = symmetrize(transpose(F_A) * F_A);
-    SymmetricTensor<2, dim> C_bar_A = pow(J, -2/3) * C_A;
-
-    double lambda = sqrt(trace(C_bar_A)/3);
-
-    SymmetricTensor<2, dim> dlambda_dC = (dC_bar_dC * I) / (6 * lambda);
-
-    double y = lambda / lambda_L;
-    double H = d_inverse_Langevin_dy(y) / y - inverse_Langevin(y) / (y*y);
-
-    // Pieces that add up to dS_A_dC_A_dev
-    SymmetricTensor<4, dim> C_dev_1, C_dev_2, C_dev_21, C_dev_22, C_dev_23;
-
-    C_dev_1  = (mu_0 / lambda_L) * H 
-             * outer_product(
-               pow(J, -2/3) * I - pow(lambda, 2) * invert(C_A)
-               ,
-               dlambda_dC);
-
-    C_dev_21 = outer_product(I, -(2/3) * pow(J, -5/3) * dJ_dC);
-    C_dev_22 = outer_product(-2 * lambda * invert(C_A), dlambda_dC);
-    C_dev_23 = -pow(lambda, 2) * dC_inv_dC;
-    C_dev_2  = (mu_0 * inverse_Langevin(y) / y)
-             * (C_dev_21 + C_dev_22 + C_dev_23);
-
-    dS_A_dC_A_dev = C_dev_1 + C_dev_2;
-
-    // Calculation for dS_A_dC_A_dev ends
-    
-    // Calculation for dS_A_dC_A_vol starts
-
-    double G     = J * log((J - f_1)/(1 - f_1));
-    double dG_dJ = log((J - f_1)/(1 - f_1)) + J / (J - f_1);
-
-    // Pieces that add up to dS_A_dC_A_vol
-    SymmetricTensor<4, dim> C_vol_1, C_vol_2;
-
-    C_vol_1 = K * dG_dJ * outer_product(invert(C_A), dJ_dC);
-
-    C_vol_2 = K * G * dC_inv_dC;
-
-    dS_A_dC_A_vol = C_vol_1 + C_vol_2;
-
-    // Calculation for dS_A_dC_A_vol ends
-
-    dS_A_dC_A = dS_A_dC_A_vol + dS_A_dC_A_dev;
-
-    return dS_A_dC_A;
+    return V;
 }
 
-
 template <int dim>
-SymmetricTensor<4, dim> compute_tangent_modulus(
-    Tensor<2, dim> F,  // Total deformation gradient
-    Tensor<2, dim> F_A, // Elastic part of the deformation gradient
-    Tensor<2, dim> F_B, // Viscous part of the deformation gradient
-    SymmetricTensor<2, dim> D_B, // Symmetric part of viscous velocity gradient
-    double delta_t, // Length of the current time step
-    double f_R,
-    SymmetricTensor<2, dim> S_B,
-    SymmetricTensor<2, dim> S_B_dev
-) {
+SymmetricTensor<2, dim> Material<dim>::multiply_symmetric_tensors(SymmetricTensor<2, dim> A, SymmetricTensor<2, dim> B) {
 
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+    SymmetricTensor<2, dim> tmp;
 
-    SymmetricTensor<4, dim> I4;
-    for (unsigned int i = 0; i < dim; ++i)
-        for (unsigned int j = 0; j < dim; ++j)
-            for (unsigned int k = 0; k < dim; ++k)
-                for (unsigned int l = 0; l < dim; ++l)
-                    I4[i][j][k][l] = 0.5 * (
-                                     I[i][k] * I[j][l]
-                                     +
-                                     I[i][l] * I[j][k]
-                                    );
-
-    SymmetricTensor<2, dim> C   = symmetrize(transpose(F) * F);
-    SymmetricTensor<2, dim> C_A = symmetrize(transpose(F_A) * F_A);
-    Tensor<2, dim> F_B_inv      = invert(F_B);
-
-    SymmetricTensor<4, dim> dC_A_inv_dC_A = 
-        Physics::Elasticity::StandardTensors<dim>::Dev_P(F_A);
-
-    // 4th rank tensors needed to compute the tangent modulus in reference coordinates
-    SymmetricTensor<4, dim> A;
-    SymmetricTensor<4, dim> B;
-    SymmetricTensor<4, dim> M;
-    SymmetricTensor<4, dim> N;
-    SymmetricTensor<4, dim> P;
-
-    Tensor<2, dim> F_B_invT_C = transpose(F_B_inv) * C;
-    Tensor<2, dim> D_B_F_B_inv = D_B * F_B_inv;
-
-    for (unsigned int i = 0; i < dim; ++i) {
-        for (unsigned int j = 0; j < dim; ++j) {
-            for (unsigned int k = 0; k < dim; ++k) {
-                for (unsigned int l = 0; l < dim; ++l) {
-
-                    A[i][j][k][l] = F_B_inv[k][i] * F_B_inv[l][j]
-                                  + F_B_inv[l][i] * F_B_inv[k][j]
-                                  - (
-                                    F_B_inv[k][i] * D_B_F_B_inv[l][j]
-                                  + F_B_inv[l][i] * D_B_F_B_inv[k][j]
-                                  + F_B_inv[k][j] * D_B_F_B_inv[l][i]
-                                  + F_B_inv[l][j] * D_B_F_B_inv[k][i]
-                                  ) * delta_t;
-
-                    B[i][j][k][l] = - (
-                        F_B_invT_C[i][k] * F_B_inv[l][j] +
-                        F_B_invT_C[j][k] * F_B_inv[l][i]
-                        ) * delta_t;
-
-                }
+    for(unsigned int i = 0; i < dim; ++i) {
+        for(unsigned int j = 0; j < dim; ++j) {
+            for(unsigned int k = 0; k < dim; ++k) {
+                tmp[i][j] += A[i][k] * B[k][j];
             }
         }
     }
 
-    M = (gamma_dot_0 * f_R / pow(sqrt(2) * sigma_0, np)) 
-        * (
-          2 * pow(S_B_dev * S_B_dev, (3-2*np)/(2*np-2))
-        * outer_product(S_B_dev, S_B_dev)
-        + pow(S_B_dev * S_B_dev, (np - 1)/2)
-        * I4);
-
-    N = I4 - (1/3) * outer_product(C_A, invert(C_A));
-
-    P = -(1/3) * (
-          (invert(C_A) * S_B) * I4
-        + outer_product(C_A, S_B)
-        * dC_A_inv_dC_A);
-
-    // Derivative of the 2nd PK stress with respect to the total strain metric
-    SymmetricTensor<4, dim> dS_A_dC_A = compute_dS_A_dC_A(F_A);
-
-    // Compute the tangent modulus in reference coordinates
-    SymmetricTensor<4, dim> dS_A_dC; // Tangent modulus in reference coordinates
-
-    dS_A_dC = dS_A_dC_A * invert(I4 - B * M * P) * (A + B * M * N);
-
-    // Push the tangent modulus in reference coordinates to the spatial configuration
-    SymmetricTensor<4, dim> Jc; // Tangent modulus in spatial coordinates
-
-    /*Jc = (K / (1-f_1)) * outer_product(I, I);*/
-    Jc = determinant(F) 
-       /** Physics::Transformations::Contravariant::push_forward(2*dS_A_dC_A, F_A);*/
-       * Physics::Transformations::Contravariant::push_forward(2*dS_A_dC, F);
-
-    return Jc;
+    return tmp;
 
 }
 
 template <int dim>
-class PointHistory {
-    public:
-        PointHistory() {
+double Material<dim>::inverse_Langevin(double y) {
 
-            SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+    double a = 36.0/35.0;
+    double b = 33.0/35.0;
 
-            kirchhoff_stress = 0;
-            deformation_gradient = I;
+    return y * (3 - a * pow(y, 2)) / (1 - b * pow(y, 2));
 
-            // Initialize viscoelasticity variables
-            F_B = I;
-            F_D = I;
+}
 
-            tangent_modulus = 
-                compute_tangent_modulus(
-                    deformation_gradient, 
-                    deformation_gradient * invert(F_B), 
-                    F_B,
-                    SymmetricTensor<2, dim>(),
-                    0,
-                    1,
-                    SymmetricTensor<2, dim>(),
-                    SymmetricTensor<2, dim>());
+template <int dim>
+double Material<dim>::d_inverse_Langevin_dy(double y) {
+    // Derivative of the approximation of the inverse Langevin function with
+    // respect to its argument
+
+    double a = 36.0/35.0;
+    double b = 33.0/35.0;
+
+    double numerator   = a * b * pow(y, 4.0) + 3.0 * (b - a) * pow(y, 2.0) + 3.0;
+    double denominator = pow(b * y * y - 1.0, 2.0);
+
+    return numerator / denominator;
+}
+
+template <int dim>
+SymmetricTensor<2, dim> Material<dim>::compute_deviatoric_stress(SymmetricTensor<2, dim> B_A_bar) {
+
+    double J = determinant(deformation_gradient);
+
+    double lambda = sqrt(trace(B_A_bar) / 3.0);
+
+    SymmetricTensor<2, dim> T_d = (mu_0 / J)
+                                * (lambda_L / lambda)
+                                * inverse_Langevin(lambda / lambda_L)
+                                * deviator(B_A_bar); 
+
+    return T_d;
+
+}
+
+template <int dim>
+void Material<dim>::perform_constitutive_update(double delta_t) {
+    
+    // This function performs the constitutive update for this material class.
+    // It assumes that whatever piece of code has called this function, has
+    // already set the deformation graident to its latest values before calling
+    // this function.
+
+    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+
+    // Total deformation gradient of the unresolved time step. 
+    Tensor<2, dim> F = deformation_gradient;
+
+    /*Tensor<2, dim> F_inv = invert(F);*/
+
+    // At this stage, F is the deformation gradient of the new time step. F_B
+    // and F_D are the viscous deformation gradients for the previous time
+    // step, waiting to be updated.
+
+    // Volumetric part of the response is completely elastic
+    double J = determinant(F);
+    SymmetricTensor<2, dim> T_h = K * log((J - f_1)/(1 - f_1)) * I;
+
+    SymmetricTensor<2, dim> T_d; // Deviatoric part of Cauchy stress
+    SymmetricTensor<2, dim> T_A; // Cauchy stress
+
+    // Before the loop starts, we set up certain variables useful for
+    // constitutive update
+
+    Tensor<2, dim> F_B_trial = F_B;
+    Tensor<2, dim> F_B_old = F_B_trial;
+    Tensor<2, dim> F_B_new;
+
+    Tensor<2, dim> F_A = F * invert(F_B_trial);
+
+    SymmetricTensor<2, dim> B_A_bar_trial = pow(J, -2.0/3.0) * symmetrize(F_A * transpose(F_A));
+    SymmetricTensor<2, dim> B_A_bar = B_A_bar_trial;
+
+    Tensor<2, dim> F_D_trial = F_D;
+    Tensor<2, dim> F_D_old = F_D_trial;
+    Tensor<2, dim> F_D_new;
+    Tensor<2, dim> F_D_dot;
+
+    Tensor<2, dim> F_C; // Strain in spring element C
+    Tensor<2, dim> F_E; // Strain in spring element E
+
+    SymmetricTensor<2, dim> E_C; // Hencky Strain in spring element C
+    SymmetricTensor<2, dim> E_E; // Hencky Strain in spring element E
+
+    SymmetricTensor<2, dim> S_C; // Stress in spring element C
+    SymmetricTensor<2, dim> S_D; // Stress in viscous element D
+    SymmetricTensor<2, dim> S_E; // Stress in spring element E
+
+    SymmetricTensor<2, dim> T_B; // Stress in viscous element B
+    SymmetricTensor<2, dim> T_B_dev; // Deviatoric part of stress in viscous element B
+    SymmetricTensor<2, dim> n_B; // Unit vector in the direction of T_B_dev
+    SymmetricTensor<2, dim> C_B_inv; // Viscous strain in element B
+
+    SymmetricTensor<2, dim> D_tilde_D; // Stretch rate in viscous element D
+
+    double f_R, gamma_dot_B;
+
+    while (true) {
+
+        // First, stresses in the model are calculated using the old estimates
+        // of F_B and F_D
+
+        F_A = F * invert(F_B_old);
+
+        F_C = F_B_old * invert(F_D_old);
+        F_E = F_D_old;
+
+        E_C = hencky_strain(F_C);
+        E_E = hencky_strain(F_E);
+
+        S_C = G_0 * E_C;
+        S_E = G_infinity * E_E;
+
+        S_D = S_C - symmetrize(F_C * S_E * transpose(F_C));
+
+        T_d = compute_deviatoric_stress(B_A_bar);
+        T_A = T_h + T_d;
+        T_B = T_A - (1/J) * symmetrize(F_A * S_C * transpose(F_A));
+
+        // This completes the calculation of stresses in the model using the
+        // previous estimates of the history variables F_B and F_D. This is
+        // followed by the use of these stresses in the flow rules of the
+        // elements F_B and F_D to get new estimates of F_B and F_D.
+
+        C_B_inv = invert(symmetrize(transpose(F_B_old) * F_B_old));
+
+        f_R = pow(alpha, 2.0)
+            / pow(alpha + sqrt(3/trace(C_B_inv)) - 1.0, 2.0);
+
+        T_B_dev = deviator(T_B);
+
+        if (T_B_dev.norm() == 0) {
+
+            F_B = F_B_trial;
+            F_D = F_D_trial;
+
+            break;
 
         }
 
-        virtual ~PointHistory() = default;
-        Tensor<2, dim> deformation_gradient;
-        SymmetricTensor<2, dim> kirchhoff_stress;
-        SymmetricTensor<4, dim> tangent_modulus;
+        gamma_dot_B = gamma_dot_0
+                    * f_R
+                    * pow(T_B_dev.norm() / sigma_0, n);
 
-        // Accumulated viscous strains for the viscoelastic model
-        Tensor<2, 3> F_B;
-        Tensor<2, 3> F_D;
+        n_B = T_B_dev / T_B_dev.norm();
 
-};
+        B_A_bar = B_A_bar_trial - gamma_dot_B * n_B * delta_t;
+        B_A_bar = B_A_bar * pow(determinant(B_A_bar), -1.0/3.0);
 
+        F_A = square_root(B_A_bar) * pow(J, 1.0/3.0); 
+
+        F_B_new = invert(F_A) * F;
+        // To make sure that the viscous deformation is isochoric
+        F_B_new = pow(determinant(F_B_new), -1.0/3.0) * F_B_new;
+
+        D_tilde_D = S_D / eta;
+
+        F_D_dot = invert(F_C) * D_tilde_D * F_B_new;
+
+        F_D_new = F_D_trial + F_D_dot * delta_t;
+        // To make sure that the viscous deformation is isochoric
+        F_D_new = pow(determinant(F_D_new), -1.0/3.0) * F_D_new;
+
+        if (
+            (F_B_new - F_B_old).norm() < 1e-12
+            and
+            (F_D_new - F_D_old).norm() < 1e-12
+        ) {
+
+            F_B = F_B_new;
+            F_D = F_D_new;
+
+            break;
+
+        } else {
+
+            F_B_old = F_B_new;
+            F_D_old = F_D_new;
+
+        }
+
+    } // End of constitutive update loop
+
+    kirchhoff_stress = J * T_A;
+
+}
+
+template <int dim>
+void Material<dim>::compute_spatial_tangent_modulus(double delta_t) {
+
+    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+
+    // Fourth order tensors involved in the construction of the tangent modulus
+    SymmetricTensor<4, dim> S = Physics::Elasticity::StandardTensors<dim>::S;
+
+    Tensor<2, dim> F = deformation_gradient;
+
+    SymmetricTensor<2, dim> dJ_dC = 
+    Physics::Elasticity::StandardTensors<dim>::ddet_F_dC(F);
+
+    SymmetricTensor<4, dim> dC_inv_dC = 
+    Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);
+
+    double J = determinant(F);
+    Tensor<2, dim> F_inv = invert(F);
+    Tensor<2, dim> F_A = F * invert(F_B);
+    SymmetricTensor<2, dim> B_A_bar = pow(J, -2.0/3.0) 
+                                    * symmetrize(F_A * transpose(F_A));
+
+    SymmetricTensor<2, dim> C       = symmetrize(transpose(F) * F);
+    SymmetricTensor<2, dim> C_inv   = invert(C);
+    SymmetricTensor<2, dim> C_B     = symmetrize(transpose(F_B) * F_B);
+    SymmetricTensor<2, dim> C_B_inv = invert(C_B);
+
+    double lambda = sqrt(trace(B_A_bar) / 3.0);
+    double y      = lambda / lambda_L;
+
+    double H    = mu_0 * inverse_Langevin(y) / y;
+    double dHdl = (mu_0 / lambda_L)
+                * (d_inverse_Langevin_dy(y)/y - inverse_Langevin(y)/(y*y));
+
+    SymmetricTensor<4, dim> A_1, A_2, A_3, A_4, A_5;
+
+    A_1 = (1/(6 * lambda))
+        * outer_product(
+          (2.0/3.0) * (dHdl * lambda * lambda + 2 * H * lambda) * (C_B_inv * C) * pow(J, -5.0/3.0) * C_inv
+        - (2.0/3.0) * dHdl * pow(J, -7.0/3.0) * (C_B_inv * C) * C_B_inv
+          ,
+          dJ_dC);
+
+    A_2 = (1/(6 * lambda))
+        * outer_product(
+          dHdl * pow(J, -4.0/3.0) * C_B_inv - pow(J, -2.0/3.0) * (dHdl * lambda * lambda + 2 * H * lambda) * C_inv
+          ,
+          C);
+
+    A_3 = (1/(6 * lambda))
+        * outer_product(
+          dHdl * pow(J, -4.0/3.0) * C_B_inv - pow(J, -2.0/3.0) * (dHdl * lambda * lambda + 2 * H * lambda) * C_inv
+          ,
+          C_B_inv);
+
+    A_4 = A_1 + A_3
+        - (2.0/3.0) * H * pow(J, -5.0/3.0) * outer_product(C_B_inv, dJ_dC) 
+        - H * lambda * lambda * dC_inv_dC;
+
+    A_5 = A_2 + H * pow(J, -2.0/3.0) * S;
+
+    Tensor<2, dim> F_C = F_B * invert(F_D);
+
+    SymmetricTensor<2, dim> E_C = hencky_strain(F_C);
+
+    SymmetricTensor<2, dim> S_C = G_0 * E_C;
+
+    SymmetricTensor<2, dim> T_h = K * log((J - f_1)/(1 - f_1)) * I;
+    SymmetricTensor<2, dim> T_d = compute_deviatoric_stress(B_A_bar);
+    SymmetricTensor<2, dim> T_A = T_h + T_d;
+    SymmetricTensor<2, dim> T_B = T_A - (1/J) * symmetrize(F_A * S_C * transpose(F_A));
+
+    SymmetricTensor<2, dim> T_B_dev = deviator(T_B);
+    SymmetricTensor<2, dim> S_B = symmetrize(F_inv * T_B_dev * transpose(F_inv));
+
+    SymmetricTensor<2, dim> C_SB    = multiply_symmetric_tensors(C, S_B);
+    SymmetricTensor<2, dim> SB_C_SB = multiply_symmetric_tensors(S_B, C_SB);
+
+    SymmetricTensor<2, dim> SB_C   = multiply_symmetric_tensors(S_B, C);
+    SymmetricTensor<2, dim> C_SB_C = multiply_symmetric_tensors(C, SB_C);
+
+    double T_B_mod = T_B_dev.norm();
+
+    double g_1 = - gamma_dot_0 * pow(alpha, 2.0) / pow(sigma_0, n);
+    double g_2 = alpha + sqrt(3/trace(C_B_inv)) - 1.0;
+
+    SymmetricTensor<4, dim> B_1, B_2, B_3, B_4, B_5;
+
+    B_1 = g_1 
+        * sqrt(3) * pow(trace(C_B_inv), -1.5) * pow(T_B_mod, n-1) * pow(g_2, -3.0)
+        * outer_product(S_B, I);
+
+    B_2 = g_1
+        * pow(J, 2.0) * (n - 1) * pow(T_B_mod, n-3) * pow(g_2, -2.0)
+        * outer_product(S_B, SB_C_SB);
+
+    B_3 = g_1
+        * pow(J, 2.0) * (n - 1) * pow(T_B_mod, n-3) * pow(g_2, -2.0)
+        * outer_product(S_B, C_SB_C);
+
+    B_4 = g_1
+        * pow(T_B_mod, n-1) * pow(g_2, -2.0)
+        * S;
+
+    B_5 = g_1
+        * J * (C_SB * SB_C) * (n-1) * pow(T_B_mod, n-3) * pow(g_2, -2.0)
+        * outer_product(S_B, dJ_dC);
+
+    SymmetricTensor<4, dim> C_1 = invert(S - B_1 * delta_t) * (B_2 + B_5) * delta_t;
+    SymmetricTensor<4, dim> C_2 = invert(S - B_1 * delta_t) * (B_3 + B_4) * delta_t;
+
+    SymmetricTensor<4, dim> dS_d_dC;
+
+    dS_d_dC = invert(S - A_5 * C_2) * (A_4 + A_5 * C_1);
+
+    SymmetricTensor<4, dim> dS_h_dC;
+
+    double fJ = K * J * log((J - f_1) / (1.0 - f_1));
+    double dfJ_dJ = K * (log((J - f_1) / (1.0 - f_1)) + J/(J - f_1));
+
+    dS_h_dC = fJ * dC_inv_dC + dfJ_dJ * outer_product(C_inv, dJ_dC);
+
+    SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
+
+    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
+
+}

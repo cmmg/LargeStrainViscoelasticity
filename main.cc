@@ -34,7 +34,6 @@
 
 using namespace dealii;
 
-#include "parameters.h"
 #include "mechanics.h"
 
 template <int dim>
@@ -50,18 +49,6 @@ class Problem {
         void calculate_residual_norm();
         void solve_linear_system();
         void update_all_history_data();
-
-        void compute_updated_quadrature_point_data (
-            Tensor<2, dim> F, // Deformation gradient
-            std::shared_ptr<PointHistory<dim>> point_history,
-            unsigned int q,
-            // Output variables :
-            Tensor<2, dim> &F_B,
-            Tensor<2, dim> &F_D,
-            SymmetricTensor<2, dim> &T_A,
-            SymmetricTensor<4, dim> &Jc
-        );
-
         void perform_L2_projections();
         void output_results();
 
@@ -83,7 +70,7 @@ class Problem {
         std::vector<Vector<double>> nodal_output_L2;
 
         // History data at quadrature points
-        CellDataStorage<typename Triangulation<dim>::cell_iterator, PointHistory<dim>>
+        CellDataStorage<typename Triangulation<dim>::cell_iterator, Material<dim>>
         quadrature_point_history;
 
         // Time stepping
@@ -137,10 +124,10 @@ Problem<dim>::Problem () :
     absolute_tolerance(1e-12),
     current_time(0),
     delta_t(1e-3),
-    total_time(0.4),
+    total_time(0.5),
     step_number(0),
     max_no_of_NR_iterations(20),
-    max_no_of_local_iterations(100),
+    max_no_of_local_iterations(20),
     text_output_file("text_output_file.txt")
     {}
 
@@ -148,10 +135,11 @@ template <int dim>
 void Problem<dim>::run () {
 
     setup_system();
-    perform_L2_projections();
-    output_results(); // Output the initial state of the system to the output file
 
     solution = 0.0;
+
+    perform_L2_projections();
+    output_results(); // Output the initial state of the system to the output file
 
     while (current_time < total_time) {
 
@@ -197,16 +185,13 @@ void Problem<dim>::run () {
                 << "Residual norm : " << residual_norm 
                 << "\n";
 
-            if (iterations == max_no_of_NR_iterations) {
-                std::cout 
-                    << "Max Newton-Raphson iterations reached. Exiting program.\n";
-                exit(0);
-            }
-
-            if (residual_norm / initial_residual_norm < relative_tolerance
-                /*or*/
+            if (initial_residual_norm == 0 
+                or
+                (residual_norm / initial_residual_norm < relative_tolerance
                 and
-                residual_norm < absolute_tolerance) {
+                residual_norm < absolute_tolerance) 
+            ) {
+
                 std::cout 
                     << "Step converged in " 
                     << iterations 
@@ -221,11 +206,15 @@ void Problem<dim>::run () {
             update_all_history_data();
             iterations++;
 
+            if (iterations == max_no_of_NR_iterations) {
+                std::cout << "Max Newton-Raphson iterations reached. Exiting program.\n";
+                exit(0);
+            }
         }
 
         perform_L2_projections();
 
-        /*output_results();*/
+        output_results();
 
     }
 
@@ -352,10 +341,17 @@ void Problem<dim>::generate_boundary_conditions () {
 
     */
 
+    double top_surface_speed = 1;
+
     bool constrained_shear_no_lateral_displacement   = false;
     bool constrained_shear_with_lateral_displacement = false;
     bool pure_shear                                  = false;
-    bool uniaxial_compression                        = true;
+    bool uniaxial_compression                        = false;
+
+    constrained_shear_no_lateral_displacement   = true;
+    /*constrained_shear_with_lateral_displacement = true;*/
+    /*pure_shear                                  = true;*/
+    /*uniaxial_compression                        = true;*/
 
     // Check that exactly one of the above set of boundary conditions is
     // applied to the domain.
@@ -766,7 +762,7 @@ void Problem<dim>::assemble_linear_system () {
 
     // Object for temporarily storing the quadrature point data while
     // performing quadrature over the current cell
-    std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+    std::vector<std::shared_ptr<Material<dim>>> quadrature_point_history_data;
 
     Tensor<2, dim> F;    // Deformation gradient
     Tensor<2, dim> Finv; // Inverse of the deformation gradient
@@ -798,7 +794,7 @@ void Problem<dim>::assemble_linear_system () {
 
             F  = quadrature_point_history_data[q]->deformation_gradient;
             Js = quadrature_point_history_data[q]->kirchhoff_stress;
-            Jc = quadrature_point_history_data[q]->tangent_modulus;
+            Jc = quadrature_point_history_data[q]->spatial_tangent_modulus;
 
             Finv = invert(F);
 
@@ -866,18 +862,6 @@ void Problem<dim>::assemble_linear_system () {
                         system_matrix,
                         system_rhs);
 
-            if(step_number == 1) {
-                text_output_file 
-                << "iterations : " << iterations << std::endl
-                << "system_rhs : " << system_rhs << std::endl
-                << "delta_solution : " << delta_solution << std::endl
-                << "solution : " << solution << std::endl;
-                /*text_output_file << std::endl;*/
-                /*text_output_file << "system_matrix : ";*/
-                /*system_matrix.print(text_output_file);*/
-                text_output_file << std::endl;
-            }
-
         } else {
             // Non-homogenous boundary conditions will be satisfied in the
             // first iteration of the increment. No need to change the
@@ -889,18 +873,6 @@ void Problem<dim>::assemble_linear_system () {
                         local_dof_indices,
                         system_matrix,
                         system_rhs);
-
-            if(step_number == 1) {
-                text_output_file 
-                << "iterations : " << iterations << std::endl
-                << "system_rhs : " << system_rhs << std::endl
-                << "delta_solution : " << delta_solution << std::endl
-                << "solution : " << solution << std::endl;
-                /*text_output_file << std::endl;*/
-                /*text_output_file << "system_matrix : ";*/
-                /*system_matrix.print(text_output_file);*/
-                text_output_file << std::endl;
-            }
 
         }
 
@@ -944,175 +916,6 @@ void Problem<dim>::solve_linear_system () {
 }
 
 template <int dim>
-void Problem<dim>::compute_updated_quadrature_point_data (
-    Tensor<2, dim> F, // Deformation gradient
-    std::shared_ptr<PointHistory<dim>> point_history,
-    [[maybe_unused]] unsigned int q, // For debugging 
-    // The following are output variables all imported by reference. The
-    // results of the quadrature point update are written into these
-    // variables.The values for the previous time step are passed in as input
-    // in the point_history variable.
-    Tensor<2, dim> &F_B,
-    Tensor<2, dim> &F_D,
-    SymmetricTensor<2, dim> &T_A,
-    SymmetricTensor<4, dim> &Jc
-) {
-
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
-
-    // Trial elastic state. Assume no viscous flow and these strain tensors
-    // just take their values from the previous time step.
-    Tensor<2, dim> F_B_trial = point_history->F_B;
-    Tensor<2, dim> F_D_trial = point_history->F_D;
-
-    // The tensors *old, *new and are related to different estimates of the
-    // tensors F_B and F_D within the iteration loop
-    Tensor<2, dim> F_B_old = F_B_trial;
-    Tensor<2, dim> F_D_old = F_D_trial;
-    Tensor<2, dim> F_B_new;
-    Tensor<2, dim> F_D_new;
-
-    // Estimates of the rates of change of the tensors F_B and F_D
-    Tensor<2, dim> F_B_dot;
-    Tensor<2, dim> F_D_dot;
-
-    // List of the other tensors and scalars involved in the constitutive update
-    double lambda;
-    double f_R;
-    double gamma_dot_B;
-
-    Tensor<2, dim> F_A; 
-    Tensor<2, dim> F_C;
-
-    SymmetricTensor<2, dim> B_bar_A;
-    SymmetricTensor<2, dim> C_A;
-    SymmetricTensor<2, dim> T_A_dev;
-    /*SymmetricTensor<2, dim> T_A;*/
-    SymmetricTensor<2, dim> S_A;
-    SymmetricTensor<2, dim> E_C;
-    SymmetricTensor<2, dim> S_C;
-    SymmetricTensor<2, dim> T_C;
-    /*SymmetricTensor<2, dim> T_B;*/
-    /*SymmetricTensor<2, dim> T_B_dev;*/
-    SymmetricTensor<2, dim> S_B;
-    SymmetricTensor<2, dim> S_B_dev;
-    SymmetricTensor<2, dim> N_B;
-    /*SymmetricTensor<2, dim> D_tilde_B;*/
-    SymmetricTensor<2, dim> D_B;
-    SymmetricTensor<2, dim> E_E;
-    SymmetricTensor<2, dim> S_E;
-    SymmetricTensor<2, dim> S_D;
-    SymmetricTensor<2, dim> D_tilde_D;
-
-    // Set the iteration counter for the consituttive update to zero
-    int local_iterations = 0;
-
-    // Volumetric response is purely elastic
-    double J = determinant(F);
-    SymmetricTensor<2, dim> T_A_vol = K * log((J - f_1)/(1 - f_1)) * I;
-
-    // Start of constitutive integration loop
-    while (true) {
-
-        // Compute T_A
-        F_A     = F * invert(F_B_old);
-        B_bar_A = pow(J, -2/3) * symmetrize(F_A * transpose(F_A));
-        lambda  = sqrt(trace(B_bar_A) / 3);
-        T_A_dev = (mu_0 / J)
-                * (lambda_L / lambda)
-                * inverse_Langevin(lambda / lambda_L)
-                * deviator(B_bar_A);
-        T_A     = T_A_vol + T_A_dev;
-        S_A     = J * Physics::Transformations::Contravariant::pull_back(T_A, F_A);
-
-        // Compute T_C
-        F_C = F_B_old * invert(F_D_old);
-        E_C = HenckyStrain(F_C);
-        S_C = 2 * G_0 * E_C;
-        /*T_C = (1/J) * symmetrize(F_A * S_C * transpose(F_A));*/
-
-        // Compute stresses for element B and direction of driving stress
-        /*T_B     = T_A - T_C;*/
-        /*T_B_dev = deviator(T_B);*/
-        /*N_B     = T_B_dev / sqrt(T_B_dev * T_B_dev);*/
-        S_B     = S_A - S_C;
-        C_A     = symmetrize(transpose(F_A) * F_A);
-        S_B_dev = S_B - (invert(C_A) * S_B) * C_A / 3;
-        N_B     = S_B_dev / sqrt(S_B_dev * S_B_dev);
-
-        /*if (q == 0) {*/
-        /*    std::cout << "S_B = " << S_B << std::endl;*/
-        /*    std::cout << "S_B_dev = " << S_B_dev << std::endl;*/
-        /*}*/
-
-        // Compute rate for F_B
-        f_R = pow(alpha, 2)
-            / pow(alpha + sqrt(trace(F_B_old * transpose(F_B_old))/3) - 1, 2);
-
-        gamma_dot_B = gamma_dot_0
-                    * f_R
-                    * pow(sqrt(S_B_dev * S_B_dev) / (sqrt(2) * sigma_0) , np);
-        /*D_tilde_B   = gamma_dot_B * N_B;*/
-        D_B     = gamma_dot_B * N_B;
-        F_B_dot = D_B * F_B_old;
-
-        // Compute new F_B
-        F_B_new = F_B_trial + F_B_dot * delta_t;
-        F_B_new = F_B_new * pow(determinant(F_B_new), -1/3);
-
-        // Computer S_E and S_D
-        E_E = HenckyStrain(F_D_old);
-        S_E = 2 * G_infinity * E_E;
-        S_D = S_C - symmetrize(F_C * S_E * transpose(F_C));
-
-        // Compute new F_D
-        D_tilde_D = S_D / (sqrt(2) * eta);
-        F_D_dot   = invert(F_C) * D_tilde_D * F_B_old;
-        F_D_new   = F_D_trial + F_D_dot * delta_t;
-        F_D_new   = F_D_new * pow(determinant(F_D_new), -1/3);
-
-        if (local_iterations == max_no_of_local_iterations) {
-
-            std::cout << "Too many constitutive update iterations."
-                      << "Exiting program."
-                      << std::endl;
-
-            exit(0);
-        }
-
-        ++local_iterations;
-
-        if ((F_B_new - F_B_old).norm() < 1e-15
-            and
-            (F_D_new - F_D_old).norm() < 1e-15) {
-
-            F_B = F_B_new;
-            F_D = F_D_new;
-
-            Jc = compute_tangent_modulus(
-                    F,
-                    F_A,
-                    F_B_trial,
-                    D_B,
-                    delta_t,
-                    f_R,
-                    S_B,
-                    S_B_dev);
-
-            return;
-
-        } else {
-
-            F_B_old = F_B_new;
-            F_D_old = F_D_new;
-
-        }
-
-    } // End of constitutive integration loop
-
-}
-
-template <int dim>
 void Problem<dim>::update_all_history_data () {
 
     // Vector of vectors for storing the gradients of the displacement field at the
@@ -1128,7 +931,7 @@ void Problem<dim>::update_all_history_data () {
     F;    // Deformation gradient
 
     // Temporary structure for holding the quadrature point data
-    std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+    std::vector<std::shared_ptr<Material<dim>>> quadrature_point_history_data;
 
     // Variables for retrieving history variables and Cauchy stress from the
     // integration point level calculations.
@@ -1156,27 +959,22 @@ void Problem<dim>::update_all_history_data () {
 
             F = Physics::Elasticity::Kinematics::F(dUdX);
 
+            // Set deformation gradient of quadrature point to new deformation
+            // gradient. For time t = 0, this is calculated as the identity
+            // matrix.
             quadrature_point_history_data[q]->deformation_gradient = F;
 
-            compute_updated_quadrature_point_data(
-                F,
-                quadrature_point_history_data[q],
-                q,
-                // Output variables :
-                F_B,
-                F_D,
-                T_A,
-                Jc
-            );
+            // Updates the history variables and the kirchhoff stress
+            quadrature_point_history_data[q]->perform_constitutive_update(delta_t);
 
-            // Update the history variables and the stress state
-            quadrature_point_history_data[q]->F_B = F_B;
-            quadrature_point_history_data[q]->F_D = F_D;
-            quadrature_point_history_data[q]->kirchhoff_stress = determinant(F) * T_A;
-            quadrature_point_history_data[q]->tangent_modulus = Jc;
+            quadrature_point_history_data[q]->compute_spatial_tangent_modulus(delta_t);
+
+            if (q == 0) 
+                text_output_file 
+                << quadrature_point_history_data[q]->kirchhoff_stress[1][2]
+                << std::endl;
 
         } // End of loop over quadrature points
-
     }
 }    
 
@@ -1234,7 +1032,7 @@ void Problem<dim>::perform_L2_projections () {
 
     // Object for temporarily storing the quadrature point data while
     // performing quadrature over the current cell
-    std::vector<std::shared_ptr<PointHistory<dim>>> quadrature_point_history_data;
+    std::vector<std::shared_ptr<Material<dim>>> quadrature_point_history_data;
 
     Tensor<2, dim> F;    // Deformation gradient
 
