@@ -1,5 +1,3 @@
-/*#define Y 200        // Young's modulus*/
-/*#define nu 0.33      // Poisson's ratio*/
 #define top_surface_speed 1      // Speed of the top surface
 
 // Material parameters
@@ -12,5 +10,5 @@
 #define G_infinity 600 // Elastic modulus for element E
 #define eta 60000 // Viscosity for element D
 #define gamma_dot_0 1e-4 // Dimensionless scaling constant
-#define alpha 0.005 // For singularity removal
+#define alpha 0.005 // For removing singularity in flow rule
 #define f_1 0.8 // Incompressible fraction of volume to account for fluid

@@ -42,16 +42,25 @@ class PointHistory {
     public:
         PointHistory() {
 
-            kirchhoff_stress = 0;
-            deformation_gradient = Physics::Elasticity::StandardTensors<dim>::I;
-
             SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+
+            kirchhoff_stress = 0;
+            deformation_gradient = I;
 
             // Initialize viscoelasticity variables
             F_B = I;
             F_D = I;
 
-            tangent_modulus = compute_tangent_modulus(deformation_gradient, deformation_gradient);
+            tangent_modulus = 
+                compute_tangent_modulus(
+                    deformation_gradient, 
+                    deformation_gradient * invert(F_B), 
+                    F_B,
+                    SymmetricTensor<2, dim>(),
+                    0,
+                    1,
+                    SymmetricTensor<2, dim>(),
+                    SymmetricTensor<2, dim>());
 
         }
 
@@ -100,7 +109,7 @@ void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
     // The variable name p has been commented out to avoid compiler warnings
     // about unused variables
     values = 0;
-    values(2) = - speed * current_time;
+    values(1) =   speed * current_time;
 }
 
 template <int dim>
@@ -269,7 +278,10 @@ void Problem<dim>::run () {
                 exit(0);
             }
 
-            if (residual_norm / initial_residual_norm < relative_tolerance) {
+            if (residual_norm / initial_residual_norm < relative_tolerance
+                /*or*/
+                and
+                residual_norm < absolute_tolerance) {
                 std::cout 
                     << "Step converged in " 
                     << iterations 
@@ -299,7 +311,7 @@ void Problem<dim>::setup_system () {
     std::cout << "-- Setting up\n" << std::endl;
 
     // Generate mesh
-    double cube_size = 5;
+    double cube_size = 1;
     double length = cube_size;
     double width = cube_size;
     double height = cube_size;
@@ -485,7 +497,8 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                     dof_handler,
                     5,
-                    VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),
+                    /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
+                    Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
                     non_homogenous_constraints,
                     fe.component_mask(y_component));
 
@@ -582,11 +595,12 @@ void Problem<dim>::generate_boundary_conditions () {
         // The face opposite the xy plane has boundary indicator of 5. This must be
         // made to move parallel to the xy plane and must not change height
         VectorTools::interpolate_boundary_values(
-                        dof_handler,
-                        5,
-                        VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),
-                        non_homogenous_constraints,
-                        fe.component_mask(y_component));
+                    dof_handler,
+                    5,
+                    /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
+                    Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
+                    non_homogenous_constraints,
+                    fe.component_mask(y_component));
 
         VectorTools::interpolate_boundary_values(
                                 dof_handler,
@@ -674,11 +688,12 @@ void Problem<dim>::generate_boundary_conditions () {
         // The face opposite the xy plane has boundary indicator of 5. This must be
         // made to move parallel to the xy plane and must not change height
         VectorTools::interpolate_boundary_values(
-                        dof_handler,
-                        5,
-                        VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),
-                        non_homogenous_constraints,
-                        fe.component_mask(y_component));
+                    dof_handler,
+                    5,
+                    /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
+                    Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
+                    non_homogenous_constraints,
+                    fe.component_mask(y_component));
 
         non_homogenous_constraints.close();
 
@@ -758,7 +773,7 @@ void Problem<dim>::generate_boundary_conditions () {
                         dof_handler,
                         5,
                         /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
-                        Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
+                        Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
                         non_homogenous_constraints,
                         fe.component_mask(z_component));
 
@@ -932,13 +947,14 @@ void Problem<dim>::assemble_linear_system () {
 
             if(step_number == 1) {
                 text_output_file 
-                << "cell_rhs : " << cell_rhs << "\n"
-                << "system_rhs : " << system_rhs << "\n";
-                text_output_file << "cell_matrix : "; 
-                cell_matrix.print_formatted(text_output_file);
+                << "iterations : " << iterations << std::endl
+                << "system_rhs : " << system_rhs << std::endl
+                << "delta_solution : " << delta_solution << std::endl
+                << "solution : " << solution << std::endl;
+                /*text_output_file << std::endl;*/
+                /*text_output_file << "system_matrix : ";*/
+                /*system_matrix.print(text_output_file);*/
                 text_output_file << std::endl;
-                text_output_file << "system_matrix : ";
-                system_matrix.print(text_output_file);
             }
 
         } else {
@@ -952,6 +968,18 @@ void Problem<dim>::assemble_linear_system () {
                         local_dof_indices,
                         system_matrix,
                         system_rhs);
+
+            if(step_number == 1) {
+                text_output_file 
+                << "iterations : " << iterations << std::endl
+                << "system_rhs : " << system_rhs << std::endl
+                << "delta_solution : " << delta_solution << std::endl
+                << "solution : " << solution << std::endl;
+                /*text_output_file << std::endl;*/
+                /*text_output_file << "system_matrix : ";*/
+                /*system_matrix.print(text_output_file);*/
+                text_output_file << std::endl;
+            }
 
         }
 
@@ -988,9 +1016,7 @@ void Problem<dim>::solve_linear_system () {
 
     if (iterations == 0) {
         non_homogenous_constraints.distribute(delta_solution);
-    } else {
-        homogenous_constraints.distribute(delta_solution);
-    } 
+    }
 
     solution += delta_solution;
 
@@ -1001,7 +1027,10 @@ void Problem<dim>::compute_updated_quadrature_point_data (
     Tensor<2, dim> F, // Deformation gradient
     std::shared_ptr<PointHistory<dim>> point_history,
     [[maybe_unused]] unsigned int q, // For debugging 
-    // Output variables all imported by reference
+    // The following are output variables all imported by reference. The
+    // results of the quadrature point update are written into these
+    // variables.The values for the previous time step are passed in as input
+    // in the point_history variable.
     Tensor<2, dim> &F_B,
     Tensor<2, dim> &F_D,
     SymmetricTensor<2, dim> &T_A,
@@ -1035,15 +1064,20 @@ void Problem<dim>::compute_updated_quadrature_point_data (
     Tensor<2, dim> F_C;
 
     SymmetricTensor<2, dim> B_bar_A;
+    SymmetricTensor<2, dim> C_A;
     SymmetricTensor<2, dim> T_A_dev;
     /*SymmetricTensor<2, dim> T_A;*/
+    SymmetricTensor<2, dim> S_A;
     SymmetricTensor<2, dim> E_C;
     SymmetricTensor<2, dim> S_C;
     SymmetricTensor<2, dim> T_C;
-    SymmetricTensor<2, dim> T_B;
-    SymmetricTensor<2, dim> T_B_dev;
+    /*SymmetricTensor<2, dim> T_B;*/
+    /*SymmetricTensor<2, dim> T_B_dev;*/
+    SymmetricTensor<2, dim> S_B;
+    SymmetricTensor<2, dim> S_B_dev;
     SymmetricTensor<2, dim> N_B;
-    SymmetricTensor<2, dim> D_tilde_B;
+    /*SymmetricTensor<2, dim> D_tilde_B;*/
+    SymmetricTensor<2, dim> D_B;
     SymmetricTensor<2, dim> E_E;
     SymmetricTensor<2, dim> S_E;
     SymmetricTensor<2, dim> S_D;
@@ -1068,17 +1102,27 @@ void Problem<dim>::compute_updated_quadrature_point_data (
                 * inverse_Langevin(lambda / lambda_L)
                 * deviator(B_bar_A);
         T_A     = T_A_vol + T_A_dev;
+        S_A     = J * Physics::Transformations::Contravariant::pull_back(T_A, F_A);
 
         // Compute T_C
         F_C = F_B_old * invert(F_D_old);
         E_C = HenckyStrain(F_C);
         S_C = 2 * G_0 * E_C;
-        T_C = (1/J) * symmetrize(F_A * S_C * transpose(F_A));
+        /*T_C = (1/J) * symmetrize(F_A * S_C * transpose(F_A));*/
 
         // Compute stresses for element B and direction of driving stress
-        T_B     = T_A - T_C;
-        T_B_dev = deviator(T_B);
-        N_B     = T_B_dev / sqrt(T_B_dev * T_B_dev);
+        /*T_B     = T_A - T_C;*/
+        /*T_B_dev = deviator(T_B);*/
+        /*N_B     = T_B_dev / sqrt(T_B_dev * T_B_dev);*/
+        S_B     = S_A - S_C;
+        C_A     = symmetrize(transpose(F_A) * F_A);
+        S_B_dev = S_B - (invert(C_A) * S_B) * C_A / 3;
+        N_B     = S_B_dev / sqrt(S_B_dev * S_B_dev);
+
+        /*if (q == 0) {*/
+        /*    std::cout << "S_B = " << S_B << std::endl;*/
+        /*    std::cout << "S_B_dev = " << S_B_dev << std::endl;*/
+        /*}*/
 
         // Compute rate for F_B
         f_R = pow(alpha, 2)
@@ -1086,9 +1130,10 @@ void Problem<dim>::compute_updated_quadrature_point_data (
 
         gamma_dot_B = gamma_dot_0
                     * f_R
-                    * pow(sqrt(T_B_dev * T_B_dev) / (sqrt(2) * sigma_0) , np);
-        D_tilde_B   = gamma_dot_B * N_B;
-        F_B_dot     = invert(F_A) * D_tilde_B * F;
+                    * pow(sqrt(S_B_dev * S_B_dev) / (sqrt(2) * sigma_0) , np);
+        /*D_tilde_B   = gamma_dot_B * N_B;*/
+        D_B     = gamma_dot_B * N_B;
+        F_B_dot = D_B * F_B_old;
 
         // Compute new F_B
         F_B_new = F_B_trial + F_B_dot * delta_t;
@@ -1101,7 +1146,7 @@ void Problem<dim>::compute_updated_quadrature_point_data (
 
         // Compute new F_D
         D_tilde_D = S_D / (sqrt(2) * eta);
-        F_D_dot   = invert(F_C) * D_tilde_D * F_B;
+        F_D_dot   = invert(F_C) * D_tilde_D * F_B_old;
         F_D_new   = F_D_trial + F_D_dot * delta_t;
         F_D_new   = F_D_new * pow(determinant(F_D_new), -1/3);
 
@@ -1123,7 +1168,15 @@ void Problem<dim>::compute_updated_quadrature_point_data (
             F_B = F_B_new;
             F_D = F_D_new;
 
-            Jc = compute_tangent_modulus(F, F_A);
+            Jc = compute_tangent_modulus(
+                    F,
+                    F_A,
+                    F_B_trial,
+                    D_B,
+                    delta_t,
+                    f_R,
+                    S_B,
+                    S_B_dev);
 
             return;
 
