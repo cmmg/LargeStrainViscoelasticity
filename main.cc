@@ -38,44 +38,6 @@ using namespace dealii;
 #include "mechanics.h"
 
 template <int dim>
-class PointHistory {
-    public:
-        PointHistory() {
-
-            SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
-
-            kirchhoff_stress = 0;
-            deformation_gradient = I;
-
-            // Initialize viscoelasticity variables
-            F_B = I;
-            F_D = I;
-
-            tangent_modulus = 
-                compute_tangent_modulus(
-                    deformation_gradient, 
-                    deformation_gradient * invert(F_B), 
-                    F_B,
-                    SymmetricTensor<2, dim>(),
-                    0,
-                    1,
-                    SymmetricTensor<2, dim>(),
-                    SymmetricTensor<2, dim>());
-
-        }
-
-        virtual ~PointHistory() = default;
-        Tensor<2, dim> deformation_gradient;
-        SymmetricTensor<2, dim> kirchhoff_stress;
-        SymmetricTensor<4, dim> tangent_modulus;
-
-        // Accumulated viscous strains for the viscoelastic model
-        Tensor<2, 3> F_B;
-        Tensor<2, 3> F_D;
-
-};
-
-template <int dim>
 class Problem {
     public:
         Problem();
