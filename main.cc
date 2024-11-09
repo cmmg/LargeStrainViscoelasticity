@@ -76,43 +76,6 @@ class PointHistory {
 };
 
 template <int dim>
-class VelocityBoundaryCondition : public Function<dim> {
-    public:
-    VelocityBoundaryCondition(
-        const double current_time,
-        const double speed);
-
-    virtual void vector_value(
-                    const Point<dim> &p,
-                    Vector<double> &values) 
-                    const override;
-
-    private:
-    const double current_time;
-    const double speed;
-};
-
-// The variables current_time and speed will be passed to the constructor for
-// the velocity boundary conditions class by the top level class for the
-// problem at the moment the interpolate_boundary_conditions function is called
-template <int dim>
-VelocityBoundaryCondition<dim>::VelocityBoundaryCondition(
-    const double current_time,
-    const double speed) : Function<dim>(dim)
-    , current_time(current_time)
-    , speed(speed)
-{}
-
-template <int dim>
-void VelocityBoundaryCondition<dim>::vector_value(const Point<dim> &/*p*/,
-                                             Vector<double> &values) const {
-    // The variable name p has been commented out to avoid compiler warnings
-    // about unused variables
-    values = 0;
-    values(1) =   speed * current_time;
-}
-
-template <int dim>
 class Problem {
     public:
         Problem();
@@ -497,7 +460,6 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                     dof_handler,
                     5,
-                    /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
                     Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
                     non_homogenous_constraints,
                     fe.component_mask(y_component));
@@ -597,7 +559,6 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                     dof_handler,
                     5,
-                    /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
                     Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
                     non_homogenous_constraints,
                     fe.component_mask(y_component));
@@ -690,7 +651,6 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                     dof_handler,
                     5,
-                    /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
                     Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
                     non_homogenous_constraints,
                     fe.component_mask(y_component));
@@ -772,7 +732,6 @@ void Problem<dim>::generate_boundary_conditions () {
         VectorTools::interpolate_boundary_values(
                         dof_handler,
                         5,
-                        /*VelocityBoundaryCondition<dim>(delta_t, top_surface_speed),*/
                         Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
                         non_homogenous_constraints,
                         fe.component_mask(z_component));
