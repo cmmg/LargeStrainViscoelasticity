@@ -228,8 +228,6 @@ SymmetricTensor<4, dim> compute_tangent_modulus(
        /** Physics::Transformations::Contravariant::push_forward(2*dS_A_dC_A, F_A);*/
        * Physics::Transformations::Contravariant::push_forward(2*dS_A_dC, F);
 
-    std::cout << "Viscous strains non zero " << std::endl;
-
     return Jc;
 
 }
