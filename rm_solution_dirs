@@ -1,4 +1,0 @@
-rm -rf solution_constrained_shear_no_lateral_displacement
-rm -rf solution_constrained_shear_with_lateral_displacement
-rm -rf solution_pure_shear
-rm -rf solution_uniaxial_compression
