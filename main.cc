@@ -343,7 +343,7 @@ void Problem<dim>::generate_boundary_conditions () {
 
     */
 
-    double top_surface_speed = 9e-2;
+    double top_surface_speed = 9;
 
     bool constrained_shear_no_lateral_displacement   = false;
     bool constrained_shear_with_lateral_displacement = false;
@@ -971,15 +971,13 @@ void Problem<dim>::update_all_history_data () {
             // matrix.
             quadrature_point_history_data[q]->deformation_gradient = F;
 
-            // Updates the history variables and the kirchhoff stress
-            quadrature_point_history_data[q]->perform_constitutive_update(delta_t);
+            // For history dependent materials, the time step is required as
+            // input for input of the material variables and the tangent
+            // modulus
+            quadrature_point_history_data[q]->delta_t = delta_t;
 
-            quadrature_point_history_data[q]->compute_spatial_tangent_modulus(delta_t);
-
-            /*if (q == 0) */
-            /*    text_output_file */
-            /*    << quadrature_point_history_data[q]->kirchhoff_stress[1][2]*/
-            /*    << std::endl;*/
+            quadrature_point_history_data[q]->perform_constitutive_update();
+            quadrature_point_history_data[q]->compute_spatial_tangent_modulus();
 
         } // End of loop over quadrature points
     }
