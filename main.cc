@@ -88,7 +88,8 @@ class Problem {
 
         // Linear algebra objects for solving the problem
         Vector<double> system_rhs;
-        Vector<double> solution, delta_solution;
+        Vector<double> solution;
+        Vector<double> delta_solution;
         Vector<double> residual;
         SparsityPattern sparsity_pattern;
         SparseMatrix<double> system_matrix;
@@ -207,7 +208,8 @@ void Problem<dim>::run () {
             iterations++;
 
             if (iterations == max_no_of_NR_iterations) {
-                std::cout << "Max Newton-Raphson iterations reached. Exiting program.\n";
+                std::cout 
+                << "\nMax Newton-Raphson iterations reached. Exiting program.\n";
                 exit(0);
             }
         }
@@ -225,17 +227,16 @@ void Problem<dim>::setup_system () {
     std::cout << "-- Setting up\n" << std::endl;
 
     // Generate mesh
-    double cube_size = 1;
-    double length = cube_size;
-    double width = cube_size;
-    double height = cube_size;
+    double length = 25.4; // mm
+    double width = 25.4; // mm
+    double height = 9; // mm
     GridGenerator::hyper_rectangle(triangulation, 
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
     // Set boundary indices. The following boundary indexing assumes that the
-    // domain is a cube of edge length 1 with sides parallel to and on the 3
-    // coordinate planes.
+    // domain is a cuboidal with sides parallel to and on the 3 coordinate
+    // planes.
 
     for (const auto &cell : triangulation.active_cell_iterators()) {
         for (const auto &face : cell->face_iterators()) {
@@ -300,6 +301,7 @@ void Problem<dim>::setup_system () {
     sparsity_pattern_L2.copy_from(dsp_L2);
     mass_matrix_L2.reinit(sparsity_pattern_L2);
 
+    // Set up complete. Output details to screen.
     std::cout << "No of cells : " << triangulation.n_active_cells() << std::endl;
     std::cout << "No of vertices : " << triangulation.n_vertices() << std::endl;
     std::cout << "No of dofs : " << dof_handler.n_dofs() << std::endl;
@@ -341,17 +343,17 @@ void Problem<dim>::generate_boundary_conditions () {
 
     */
 
-    double top_surface_speed = 1;
+    double top_surface_speed = 9e-2;
 
     bool constrained_shear_no_lateral_displacement   = false;
     bool constrained_shear_with_lateral_displacement = false;
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    constrained_shear_no_lateral_displacement   = true;
+    /*constrained_shear_no_lateral_displacement   = true;*/
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    /*uniaxial_compression                        = true;*/
+    uniaxial_compression                        = true;
 
     // Check that exactly one of the above set of boundary conditions is
     // applied to the domain.
@@ -876,6 +878,10 @@ void Problem<dim>::assemble_linear_system () {
 
         }
 
+        system_matrix.print(text_output_file, false, false);
+        text_output_file << std::endl;
+        system_rhs.print(text_output_file);
+
     } // End of loop over all cells
 
 }
@@ -907,9 +913,10 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    if (iterations == 0) {
+    if (iterations == 0) 
         non_homogenous_constraints.distribute(delta_solution);
-    }
+
+    text_output_file << delta_solution << std::endl;
 
     solution += delta_solution;
 
@@ -969,10 +976,10 @@ void Problem<dim>::update_all_history_data () {
 
             quadrature_point_history_data[q]->compute_spatial_tangent_modulus(delta_t);
 
-            if (q == 0) 
-                text_output_file 
-                << quadrature_point_history_data[q]->kirchhoff_stress[1][2]
-                << std::endl;
+            /*if (q == 0) */
+            /*    text_output_file */
+            /*    << quadrature_point_history_data[q]->kirchhoff_stress[1][2]*/
+            /*    << std::endl;*/
 
         } // End of loop over quadrature points
     }

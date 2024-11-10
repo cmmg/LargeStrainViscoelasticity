@@ -4,7 +4,6 @@ class Material {
     public:
 
         Material();
-        ~Material();
 
         void perform_constitutive_update(double delta_t);
         void compute_spatial_tangent_modulus(double delta_t);
@@ -24,17 +23,15 @@ class Material {
         double f_1 = 0.8; // Volume fraction of moisture in brain tissue
         double mu_0 = 20.0; // Shear modulus
         double lambda_L = 1.09; // Maximum stretch
-        double sigma_0 = 2; // Strength parameter for viscous stretch rate
-        double n = 1; // Exponent for viscous flow rule
+        double sigma_0 = 40; // Strength parameter for viscous stretch rate
+        double n = 2; // Exponent for viscous flow rule
         double G_0 = 4500.0; // Elastic modulus for element C
         double G_infinity = 600.0; // Elastic modulus for element E
         double eta = 60000.0; // Viscosity for element D
-        double gamma_dot_0 = 1e-4; // Dimensionless scaling constant
-        /*double gamma_dot_0 = 0.0; // Dimensionless scaling constant*/
+        /*double gamma_dot_0 = 1e-10; // Dimensionless scaling constant*/
+        double gamma_dot_0 = 0.0; // Dimensionless scaling constant
         double alpha = 0.005; // For removing singularity in flow rule
         
-        std::ofstream self_output_file;
-
         double inverse_Langevin(double y);
         double d_inverse_Langevin_dy(double y);
 
@@ -51,19 +48,19 @@ Material<dim>::Material() {
 
     deformation_gradient = I;
     kirchhoff_stress = 0;
-    spatial_tangent_modulus = 0;
 
+    // Initialize the spatial tangent modulus
+    SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
+    SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
+
+    double K_s  = K / (1 - f_1);
+    double mu_s = mu_0 * lambda_L * inverse_Langevin(1/lambda_L);
+
+    spatial_tangent_modulus = (K_s - 2.0 * mu_s / 3.0) * IxI + 2 * mu_s * S;
+
+    // Initialize history variables;
     F_B = I;
     F_D = I;
-
-    self_output_file.open("self_output_file.txt");
-
-}
-
-template <int dim>
-Material<dim>::~Material() {
-
-    self_output_file.close();
 
 }
 
@@ -195,8 +192,6 @@ void Material<dim>::perform_constitutive_update(double delta_t) {
 
     // Total deformation gradient of the unresolved time step. 
     Tensor<2, dim> F = deformation_gradient;
-
-    /*Tensor<2, dim> F_inv = invert(F);*/
 
     // At this stage, F is the deformation gradient of the new time step. F_B
     // and F_D are the viscous deformation gradients for the previous time
@@ -459,6 +454,6 @@ void Material<dim>::compute_spatial_tangent_modulus(double delta_t) {
 
     SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
 
-    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
+    spatial_tangent_modulus = J * Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
 
 }
