@@ -5,3 +5,5 @@ cmake_install.cmake
 main
 *.vtu
 tags
+solution/
+text_output_file*
