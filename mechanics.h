@@ -163,6 +163,6 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dS_dC = dS_h_dC + dS_d_dC;
 
-    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
+    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
 
 }

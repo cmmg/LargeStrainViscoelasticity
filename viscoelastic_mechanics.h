@@ -5,12 +5,14 @@ class Material {
 
         Material();
 
-        void perform_constitutive_update(double delta_t);
-        void compute_spatial_tangent_modulus(double delta_t);
+        void perform_constitutive_update();
+        void compute_spatial_tangent_modulus();
 
         Tensor<2, dim>          deformation_gradient; 
         SymmetricTensor<2, dim> kirchhoff_stress;
         SymmetricTensor<4, dim> spatial_tangent_modulus;
+
+        double                  delta_t;
 
     private:
 
@@ -181,7 +183,7 @@ SymmetricTensor<2, dim> Material<dim>::compute_deviatoric_stress(SymmetricTensor
 }
 
 template <int dim>
-void Material<dim>::perform_constitutive_update(double delta_t) {
+void Material<dim>::perform_constitutive_update() {
     
     // This function performs the constitutive update for this material class.
     // It assumes that whatever piece of code has called this function, has
@@ -331,7 +333,7 @@ void Material<dim>::perform_constitutive_update(double delta_t) {
 }
 
 template <int dim>
-void Material<dim>::compute_spatial_tangent_modulus(double delta_t) {
+void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 

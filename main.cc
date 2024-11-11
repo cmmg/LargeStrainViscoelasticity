@@ -34,7 +34,8 @@
 
 using namespace dealii;
 
-#include "mechanics.h"
+/*#include "mechanics.h"*/
+#include "viscoelastic_mechanics.h"
 
 template <int dim>
 class Problem {
@@ -181,6 +182,12 @@ void Problem<dim>::run () {
             assemble_linear_system();
             calculate_residual_norm();
 
+            if (iterations == max_no_of_NR_iterations) {
+                std::cout 
+                << "\nMax Newton-Raphson iterations reached. Exiting program.\n";
+                exit(0);
+            }
+
             std::cout 
                 << "Iteration : " << iterations << " "
                 << "Residual norm : " << residual_norm 
@@ -207,11 +214,6 @@ void Problem<dim>::run () {
             update_all_history_data();
             iterations++;
 
-            if (iterations == max_no_of_NR_iterations) {
-                std::cout 
-                << "\nMax Newton-Raphson iterations reached. Exiting program.\n";
-                exit(0);
-            }
         }
 
         perform_L2_projections();
@@ -228,7 +230,7 @@ void Problem<dim>::setup_system () {
 
     // Generate mesh
     double length = 25.4; // mm
-    double width = 25.4; // mm
+    double width  = 25.4; // mm
     double height = 9; // mm
     GridGenerator::hyper_rectangle(triangulation, 
                                    Point<dim>(0, 0, 0),
@@ -879,7 +881,6 @@ void Problem<dim>::assemble_linear_system () {
         }
 
         system_matrix.print(text_output_file, false, false);
-        text_output_file << std::endl;
         system_rhs.print(text_output_file);
 
     } // End of loop over all cells
@@ -916,9 +917,11 @@ void Problem<dim>::solve_linear_system () {
     if (iterations == 0) 
         non_homogenous_constraints.distribute(delta_solution);
 
-    text_output_file << delta_solution << std::endl;
-
     solution += delta_solution;
+
+    text_output_file << delta_solution << std::endl;
+    text_output_file << solution << std::endl;
+    text_output_file << std::endl;
 
 }
 
