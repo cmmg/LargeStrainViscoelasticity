@@ -6,9 +6,10 @@ class Material {
         Material();
 
         void load_material_parameters(ParameterHandler &);
+        void compute_initial_tangent_modulus();
+
         void perform_constitutive_update();
         void compute_spatial_tangent_modulus();
-        void compute_initial_tangent_modulus();
 
         Tensor<2, dim>          deformation_gradient; 
         SymmetricTensor<2, dim> kirchhoff_stress;
@@ -34,19 +35,6 @@ class Material {
         double eta; // Viscosity for element D
         double gamma_dot_0; // Dimensionless scaling constant
         double alpha; // For removing singularity in flow rule
-
-        // Material parameters
-        /*double K = 800.0; // Bulk modulus*/
-        /*double f_1 = 0.8; // Volume fraction of moisture in brain tissue*/
-        /*double mu_0 = 20.0; // Shear modulus*/
-        /*double lambda_L = 1.09; // Maximum stretch*/
-        /*double sigma_0 = 40; // Strength parameter for viscous stretch rate*/
-        /*double n = 2; // Exponent for viscous flow rule*/
-        /*double G_0 = 4500.0; // Elastic modulus for element C*/
-        /*double G_infinity = 600.0; // Elastic modulus for element E*/
-        /*double eta = 60000.0; // Viscosity for element D*/
-        /*double gamma_dot_0 = 1e-4; // Dimensionless scaling constant*/
-        /*double alpha = 0.005; // For removing singularity in flow rule*/
 
         double inverse_Langevin(double y);
         double d_inverse_Langevin_dy(double y);
@@ -81,7 +69,7 @@ void Material<dim>::compute_initial_tangent_modulus() {
     SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
     SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
 
-    double K_s  = K / (1 - f_1);
+    double K_s  = K / (1.0 - f_1);
     double mu_s = mu_0 * lambda_L * inverse_Langevin(1/lambda_L);
 
     spatial_tangent_modulus = (K_s - 2.0 * mu_s / 3.0) * IxI + 2 * mu_s * S;

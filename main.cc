@@ -37,8 +37,8 @@ using namespace dealii;
 
 #include <iostream>
 
-/*#include "mechanics.h"*/
-#include "viscoelastic_mechanics.h"
+#include "mechanics.h"
+/*#include "viscoelastic_mechanics.h"*/
 
 template <int dim>
 class Problem {
@@ -58,6 +58,7 @@ class Problem {
         void output_results();
 
     private: // variables
+
         // Meshing
         Triangulation<dim> triangulation;
         DoFHandler<dim> dof_handler;
@@ -248,6 +249,12 @@ void Problem<dim>::declare_parameters () {
 
     parameter_handler.leave_subsection();
 
+    parameter_handler.enter_subsection("Loading Condition");
+
+    parameter_handler.declare_entry("nominal strain rate", "1", Patterns::Double());
+
+    parameter_handler.leave_subsection();
+
     parameter_handler.enter_subsection("Time Stepping and Iteration Control");
 
     parameter_handler.declare_entry("relative tolerance", "1e-12", Patterns::Double());
@@ -425,8 +432,6 @@ void Problem<dim>::generate_boundary_conditions () {
 
     */
 
-    double top_surface_speed = 9;
-
     bool constrained_shear_no_lateral_displacement   = false;
     bool constrained_shear_with_lateral_displacement = false;
     bool pure_shear                                  = false;
@@ -436,6 +441,13 @@ void Problem<dim>::generate_boundary_conditions () {
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
     uniaxial_compression                        = true;
+
+    parameter_handler.enter_subsection("Domain Geometry");
+    double height = parameter_handler.get_double("height");
+    parameter_handler.leave_subsection();
+
+    double nominal_strain_rate = 1;
+    double top_surface_speed   = height * nominal_strain_rate;
 
     // Check that exactly one of the above set of boundary conditions is
     // applied to the domain.
@@ -960,8 +972,7 @@ void Problem<dim>::assemble_linear_system () {
 
         }
 
-        system_matrix.print(text_output_file, false, false);
-        system_rhs.print(text_output_file);
+        /*system_matrix.print(text_output_file, false, false);*/
 
     } // End of loop over all cells
 
@@ -999,8 +1010,9 @@ void Problem<dim>::solve_linear_system () {
 
     solution += delta_solution;
 
-    text_output_file << delta_solution << std::endl;
-    text_output_file << solution << std::endl;
+    text_output_file << "system_rhs     = " << system_rhs << std::endl;
+    text_output_file << "delta_solution = " << delta_solution << std::endl;
+    text_output_file << "solution       = " << solution << std::endl;
     text_output_file << std::endl;
 
 }
@@ -1054,11 +1066,10 @@ void Problem<dim>::update_all_history_data () {
             // matrix.
             quadrature_point_history_data[q]->deformation_gradient = F;
 
-            // For history dependent materials, the time step is required as
-            // input for input of the material variables and the tangent
+            // For history dependent materials, the time step length is
+            // required as input for the material variables and the tangent
             // modulus
             quadrature_point_history_data[q]->delta_t = delta_t;
-
             quadrature_point_history_data[q]->perform_constitutive_update();
             quadrature_point_history_data[q]->compute_spatial_tangent_modulus();
 

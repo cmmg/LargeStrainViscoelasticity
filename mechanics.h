@@ -1,31 +1,31 @@
 template <int dim>
 class Material {
 
-    public: // variables
+    public:
+
+        Material();
+
+        void load_material_parameters(ParameterHandler &);
+        void compute_initial_tangent_modulus();
+
+        void perform_constitutive_update();
+        void compute_spatial_tangent_modulus();
 
         Tensor<2, dim>          deformation_gradient; 
         SymmetricTensor<2, dim> kirchhoff_stress;
         SymmetricTensor<4, dim> spatial_tangent_modulus;
 
-        // Length of the time step for which calculation is being performed
         double delta_t; 
 
-    public: // functions
-
-        Material();
-
-        void perform_constitutive_update();
-        void compute_spatial_tangent_modulus();
-
-    private: // variables
+    private:
 
         // Material parameters
-        double K = 800.0; // Bulk modulus
-        double f_1 = 0.8; // Volume fraction of moisture in brain tissue
-        double mu_0 = 20.0; // Shear modulus
-        double lambda_L = 1.09; // Maximum stretch
+        double K; // Bulk modulus
+        double f_1; // Volume fraction of moisture in brain tissue
+        double mu_0; // Shear modulus
+        double lambda_L; // Maximum stretch
 
-    private: // functions
+    private:
 
         double inverse_Langevin(double y);
         double d_inverse_Langevin_dy(double y);
@@ -40,11 +40,29 @@ Material<dim>::Material() {
     deformation_gradient = I;
     kirchhoff_stress = 0;
 
+}
+
+template <int dim>
+void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler) {
+
+    K           = parameter_handler.get_double("K");
+    f_1         = parameter_handler.get_double("f1");
+    mu_0        = parameter_handler.get_double("mu0");
+    lambda_L    = parameter_handler.get_double("lambdaL");
+        
+}
+
+template <int dim>
+void Material<dim>::compute_initial_tangent_modulus() {
+
+    // Computes the small strain elastic tangent modulus for use in the first
+    // iteration of the first time step.
+
     // Initialize the spatial tangent modulus
     SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
     SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
 
-    double K_s  = K / (1 - f_1);
+    double K_s  = K / (1.0 - f_1);
     double mu_s = mu_0 * lambda_L * inverse_Langevin(1/lambda_L);
 
     spatial_tangent_modulus = (K_s - 2.0 * mu_s / 3.0) * IxI + 2 * mu_s * S;
@@ -163,6 +181,6 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dS_dC = dS_h_dC + dS_d_dC;
 
-    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
+    spatial_tangent_modulus = J * Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
 
 }
