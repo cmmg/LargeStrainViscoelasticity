@@ -30,9 +30,12 @@
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/fe/mapping_q_eulerian.h>
 
-#include <iostream>
+// Reading input parameters
+#include <deal.II/base/parameter_handler.h>
 
 using namespace dealii;
+
+#include <iostream>
 
 /*#include "mechanics.h"*/
 #include "viscoelastic_mechanics.h"
@@ -44,6 +47,7 @@ class Problem {
         void run();
 
     private: // functions
+        void declare_parameters();
         void setup_system();
         void generate_boundary_conditions();
         void assemble_linear_system();
@@ -85,7 +89,6 @@ class Problem {
         int step_number;
         int iterations;
         int max_no_of_NR_iterations;
-        int max_no_of_local_iterations;
 
         // Linear algebra objects for solving the problem
         Vector<double> system_rhs;
@@ -96,6 +99,10 @@ class Problem {
         SparseMatrix<double> system_matrix;
         AffineConstraints<double> non_homogenous_constraints,
                                       homogenous_constraints;
+
+        // Reading parameters from an input file
+        ParameterHandler parameter_handler;
+        std::ifstream parameters_file;
 
         // Output
         DataOut<dim> data_out;
@@ -122,22 +129,28 @@ Problem<dim>::Problem () :
             quadrature_formula,
             update_values |
             update_JxW_values),
-    relative_tolerance(1e-12),
-    absolute_tolerance(1e-12),
-    current_time(0),
-    delta_t(1e-3),
-    total_time(0.5),
-    step_number(0),
     max_no_of_NR_iterations(20),
-    max_no_of_local_iterations(20),
+    parameters_file("parameters.json"),
     text_output_file("text_output_file.txt")
     {}
 
 template <int dim>
 void Problem<dim>::run () {
 
+    declare_parameters();
     setup_system();
 
+    parameter_handler.enter_subsection("Time Stepping and Iteration Control");
+
+    relative_tolerance = parameter_handler.get_double("relative tolerance");
+    absolute_tolerance = parameter_handler.get_double("absolute tolerance");
+    delta_t            = parameter_handler.get_double("time step length");
+    total_time         = parameter_handler.get_double("total simulation time");
+
+    parameter_handler.leave_subsection();
+
+    step_number = 0;
+    current_time = 0.0;
     solution = 0.0;
 
     perform_L2_projections();
@@ -225,20 +238,75 @@ void Problem<dim>::run () {
 } // End of run function
 
 template <int dim>
+void Problem<dim>::declare_parameters () {
+
+    parameter_handler.enter_subsection("Domain Geometry");
+
+    parameter_handler.declare_entry("length", "1.0", Patterns::Double());
+    parameter_handler.declare_entry("width", "1.0", Patterns::Double());
+    parameter_handler.declare_entry("height", "1.0", Patterns::Double());
+
+    parameter_handler.leave_subsection();
+
+    parameter_handler.enter_subsection("Time Stepping and Iteration Control");
+
+    parameter_handler.declare_entry("relative tolerance", "1e-12", Patterns::Double());
+    parameter_handler.declare_entry("absolute tolerance", "1e-12", Patterns::Double());
+    parameter_handler.declare_entry("time step length", "1e-3", Patterns::Double());
+    parameter_handler.declare_entry("total simulation time", "0.5", Patterns::Double());
+
+    parameter_handler.leave_subsection();
+
+    parameter_handler.enter_subsection("Viscoelastic Material Parameters");
+
+    parameter_handler.declare_entry("K", "800.0", Patterns::Double());
+    parameter_handler.declare_entry("f1", "0.8", Patterns::Double());
+    parameter_handler.declare_entry("mu0", "20.0", Patterns::Double());
+    parameter_handler.declare_entry("lambdaL", "1.09", Patterns::Double());
+    parameter_handler.declare_entry("sigma0", "40", Patterns::Double());
+    parameter_handler.declare_entry("n", "2", Patterns::Double());
+    parameter_handler.declare_entry("G0", "4500.0", Patterns::Double());
+    parameter_handler.declare_entry("Ginfinity", "600.0", Patterns::Double());
+    parameter_handler.declare_entry("eta", "60000.0", Patterns::Double());
+    parameter_handler.declare_entry("gammadot0", "1e-4", Patterns::Double());
+    parameter_handler.declare_entry("alpha", "0.005", Patterns::Double());
+
+    parameter_handler.leave_subsection();
+
+    parameter_handler.parse_input_from_json(parameters_file);
+}
+
+template <int dim>
 void Problem<dim>::setup_system () {
+
     std::cout << "-- Setting up\n" << std::endl;
 
+    parameter_handler.enter_subsection("Domain Geometry");
+
+    double length = parameter_handler.get_double("length");
+    double width  = parameter_handler.get_double("width");
+    double height = parameter_handler.get_double("height");
+
+    parameter_handler.leave_subsection();
+
     // Generate mesh
-    double length = 25.4; // mm
-    double width  = 25.4; // mm
-    double height = 9; // mm
     GridGenerator::hyper_rectangle(triangulation, 
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
+    // Make space for all the history variables of the system
+    quadrature_point_history.initialize(triangulation.begin_active(),
+                                        triangulation.end(),
+                                        quadrature_formula.size());
+
     // Set boundary indices. The following boundary indexing assumes that the
     // domain is a cuboidal with sides parallel to and on the 3 coordinate
-    // planes.
+    // planes. This loop also reads material parameters from the input file and
+    // assigns the same to all materials.
+
+    // Object for temporarily storing the quadrature point data while loading
+    // material parameters from the input file.
+    std::vector<std::shared_ptr<Material<dim>>> quadrature_point_history_data;
 
     for (const auto &cell : triangulation.active_cell_iterators()) {
         for (const auto &face : cell->face_iterators()) {
@@ -265,16 +333,28 @@ void Problem<dim>::setup_system () {
 
             }
         }
+
+        // Load material parameters from input file for all integration points
+        // of all cells.
+        fe_values.reinit(cell);
+
+        quadrature_point_history_data = quadrature_point_history.get_data(cell);
+
+        parameter_handler.enter_subsection("Viscoelastic Material Parameters");
+
+        // Quadrature loop for current cell
+        for (unsigned int q = 0; q < fe_values.n_quadrature_points; ++q) {
+            quadrature_point_history_data[q]->load_material_parameters(parameter_handler);
+            quadrature_point_history_data[q]->compute_initial_tangent_modulus();
+        }
+
+        parameter_handler.leave_subsection();
+
     }
 
     /*triangulation.refine_global(1);*/
 
     dof_handler.distribute_dofs(fe);
-
-    // Make space for all the history variables of the system
-    quadrature_point_history.initialize(triangulation.begin_active(),
-                                        triangulation.end(),
-                                        quadrature_formula.size());
 
     // Set the sizes of the linear algebra objects
     residual.reinit(dof_handler.n_dofs());

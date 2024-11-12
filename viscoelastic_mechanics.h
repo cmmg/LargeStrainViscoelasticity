@@ -5,14 +5,16 @@ class Material {
 
         Material();
 
+        void load_material_parameters(ParameterHandler &);
         void perform_constitutive_update();
         void compute_spatial_tangent_modulus();
+        void compute_initial_tangent_modulus();
 
         Tensor<2, dim>          deformation_gradient; 
         SymmetricTensor<2, dim> kirchhoff_stress;
         SymmetricTensor<4, dim> spatial_tangent_modulus;
 
-        double                  delta_t;
+        double delta_t;
 
     private:
 
@@ -21,19 +23,31 @@ class Material {
         Tensor<2, dim> F_D;
 
         // Material parameters
-        double K = 800.0; // Bulk modulus
-        double f_1 = 0.8; // Volume fraction of moisture in brain tissue
-        double mu_0 = 20.0; // Shear modulus
-        double lambda_L = 1.09; // Maximum stretch
-        double sigma_0 = 40; // Strength parameter for viscous stretch rate
-        double n = 2; // Exponent for viscous flow rule
-        double G_0 = 4500.0; // Elastic modulus for element C
-        double G_infinity = 600.0; // Elastic modulus for element E
-        double eta = 60000.0; // Viscosity for element D
-        /*double gamma_dot_0 = 1e-10; // Dimensionless scaling constant*/
-        double gamma_dot_0 = 0.0; // Dimensionless scaling constant
-        double alpha = 0.005; // For removing singularity in flow rule
-        
+        double K; // Bulk modulus
+        double f_1; // Volume fraction of moisture in brain tissue
+        double mu_0; // Shear modulus
+        double lambda_L; // Maximum stretch
+        double sigma_0; // Strength parameter for viscous stretch rate
+        double n; // Exponent for viscous flow rule
+        double G_0; // Elastic modulus for element C
+        double G_infinity; // Elastic modulus for element E
+        double eta; // Viscosity for element D
+        double gamma_dot_0; // Dimensionless scaling constant
+        double alpha; // For removing singularity in flow rule
+
+        // Material parameters
+        /*double K = 800.0; // Bulk modulus*/
+        /*double f_1 = 0.8; // Volume fraction of moisture in brain tissue*/
+        /*double mu_0 = 20.0; // Shear modulus*/
+        /*double lambda_L = 1.09; // Maximum stretch*/
+        /*double sigma_0 = 40; // Strength parameter for viscous stretch rate*/
+        /*double n = 2; // Exponent for viscous flow rule*/
+        /*double G_0 = 4500.0; // Elastic modulus for element C*/
+        /*double G_infinity = 600.0; // Elastic modulus for element E*/
+        /*double eta = 60000.0; // Viscosity for element D*/
+        /*double gamma_dot_0 = 1e-4; // Dimensionless scaling constant*/
+        /*double alpha = 0.005; // For removing singularity in flow rule*/
+
         double inverse_Langevin(double y);
         double d_inverse_Langevin_dy(double y);
 
@@ -51,6 +65,18 @@ Material<dim>::Material() {
     deformation_gradient = I;
     kirchhoff_stress = 0;
 
+    // Initialize history variables;
+    F_B = I;
+    F_D = I;
+
+}
+
+template <int dim>
+void Material<dim>::compute_initial_tangent_modulus() {
+
+    // Computes the small strain elastic tangent modulus for use in the first
+    // iteration of the first time step.
+
     // Initialize the spatial tangent modulus
     SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
     SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
@@ -59,10 +85,6 @@ Material<dim>::Material() {
     double mu_s = mu_0 * lambda_L * inverse_Langevin(1/lambda_L);
 
     spatial_tangent_modulus = (K_s - 2.0 * mu_s / 3.0) * IxI + 2 * mu_s * S;
-
-    // Initialize history variables;
-    F_B = I;
-    F_D = I;
 
 }
 
@@ -180,6 +202,23 @@ SymmetricTensor<2, dim> Material<dim>::compute_deviatoric_stress(SymmetricTensor
 
     return T_d;
 
+}
+
+template <int dim>
+void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler) {
+
+    K           = parameter_handler.get_double("K");
+    f_1         = parameter_handler.get_double("f1");
+    mu_0        = parameter_handler.get_double("mu0");
+    lambda_L    = parameter_handler.get_double("lambdaL");
+    sigma_0     = parameter_handler.get_double("sigma0");
+    n           = parameter_handler.get_double("n");
+    G_0         = parameter_handler.get_double("G0");
+    G_infinity  = parameter_handler.get_double("Ginfinity");
+    eta         = parameter_handler.get_double("eta");
+    gamma_dot_0 = parameter_handler.get_double("gammadot0");
+    alpha       = parameter_handler.get_double("alpha");
+        
 }
 
 template <int dim>
