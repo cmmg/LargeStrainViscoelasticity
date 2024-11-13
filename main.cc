@@ -37,8 +37,9 @@ using namespace dealii;
 
 #include <iostream>
 
-#include "mechanics.h"
-/*#include "viscoelastic_mechanics.h"*/
+/*#include "mechanics.h"*/
+#include "viscoelastic_mechanics.h"
+/*#include "st_venant_elasticity.h"*/
 
 template <int dim>
 class Problem {
@@ -204,7 +205,8 @@ void Problem<dim>::run () {
 
             std::cout 
                 << "Iteration : " << iterations << " "
-                << "Residual norm : " << residual_norm 
+                << "Residual norm : " << residual_norm << " "
+                << "Relative norm : " << residual_norm / initial_residual_norm
                 << "\n";
 
             if (initial_residual_norm == 0 
@@ -267,14 +269,14 @@ void Problem<dim>::declare_parameters () {
     parameter_handler.enter_subsection("Viscoelastic Material Parameters");
 
     parameter_handler.declare_entry("K", "800.0", Patterns::Double());
-    parameter_handler.declare_entry("f1", "0.8", Patterns::Double());
+    parameter_handler.declare_entry("f1", "0.0", Patterns::Double());
     parameter_handler.declare_entry("mu0", "20.0", Patterns::Double());
     parameter_handler.declare_entry("lambdaL", "1.09", Patterns::Double());
-    parameter_handler.declare_entry("sigma0", "40", Patterns::Double());
-    parameter_handler.declare_entry("n", "2", Patterns::Double());
-    parameter_handler.declare_entry("G0", "4500.0", Patterns::Double());
-    parameter_handler.declare_entry("Ginfinity", "600.0", Patterns::Double());
-    parameter_handler.declare_entry("eta", "60000.0", Patterns::Double());
+    parameter_handler.declare_entry("sigma0", "25", Patterns::Double());
+    parameter_handler.declare_entry("n", "3", Patterns::Double());
+    parameter_handler.declare_entry("G0", "4500", Patterns::Double());
+    parameter_handler.declare_entry("Ginfinity", "600", Patterns::Double());
+    parameter_handler.declare_entry("eta", "60000", Patterns::Double());
     parameter_handler.declare_entry("gammadot0", "1e-4", Patterns::Double());
     parameter_handler.declare_entry("alpha", "0.005", Patterns::Double());
 

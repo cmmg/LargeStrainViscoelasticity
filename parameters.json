@@ -2,27 +2,27 @@
     "Domain Geometry" : {
         "length" : 1,
         "width" : 1,
-        "height" : 2
+        "height" : 1
     }
     ,
     "Time Stepping and Iteration Control" : {
         "relative tolerance" : 1e-12,
         "absolute tolerance" : 1e-12,
-        "time step length" : 1e-3,
-        "total simulation time" : 10e-3
+        "time step length" : 1e-5,
+        "total simulation time" : 1e-3
     }
     ,
     "Viscoelastic Material Parameters" : {
-        "K" : 800.0,
+        "K" : 800,
         "f1" : 0.8,
         "mu0" : 20.0,
         "lambdaL" : 1.09,
-        "sigma0" : 25,
-        "n" : 3.0,
+        "sigma0" : 25.0,
+        "n" : 1.0,
         "G0" : 4500.0,
         "Ginfinity" : 600.0,
         "eta" : 60000.0,
-        "gammadot0" : 1e-4,
-        "alpha" : 0.005
+        "gammadot0" : 1e-5,
+        "alpha" : 0.005 
     }
 }

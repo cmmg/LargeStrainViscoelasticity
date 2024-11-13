@@ -228,7 +228,7 @@ void Material<dim>::perform_constitutive_update() {
 
     // Volumetric part of the response is completely elastic
     double J = determinant(F);
-    SymmetricTensor<2, dim> T_h = K * log((J - f_1)/(1 - f_1)) * I;
+    SymmetricTensor<2, dim> T_h = K * log((J - f_1)/(1.0 - f_1)) * I;
 
     SymmetricTensor<2, dim> T_d; // Deviatoric part of Cauchy stress
     SymmetricTensor<2, dim> T_A; // Cauchy stress
@@ -476,13 +476,13 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dS_h_dC;
 
-    double fJ = K * J * log((J - f_1) / (1.0 - f_1));
+    double fJ     = K * J * log((J - f_1) / (1.0 - f_1));
     double dfJ_dJ = K * (log((J - f_1) / (1.0 - f_1)) + J/(J - f_1));
 
     dS_h_dC = fJ * dC_inv_dC + dfJ_dJ * outer_product(C_inv, dJ_dC);
 
     SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
 
-    spatial_tangent_modulus = J * Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
+    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
 
 }

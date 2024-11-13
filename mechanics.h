@@ -45,10 +45,10 @@ Material<dim>::Material() {
 template <int dim>
 void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler) {
 
-    K           = parameter_handler.get_double("K");
-    f_1         = parameter_handler.get_double("f1");
-    mu_0        = parameter_handler.get_double("mu0");
-    lambda_L    = parameter_handler.get_double("lambdaL");
+    K        = parameter_handler.get_double("K");
+    f_1      = parameter_handler.get_double("f1");
+    mu_0     = parameter_handler.get_double("mu0");
+    lambda_L = parameter_handler.get_double("lambdaL");
         
 }
 
@@ -103,7 +103,7 @@ void Material<dim>::perform_constitutive_update() {
     // Compute Volumetric stress
     double J = determinant(F);
 
-    SymmetricTensor<2, dim> T_h = K * log((J - f_1)/(1 - f_1)) * I;
+    SymmetricTensor<2, dim> T_h = K * log((J - f_1)/(1.0 - f_1)) * I;
 
     // Compute deviatoric stress
     SymmetricTensor<2, dim> B = Physics::Elasticity::Kinematics::b(F);
@@ -140,20 +140,19 @@ void Material<dim>::compute_spatial_tangent_modulus() {
     SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);
     SymmetricTensor<4, dim> dC_bar_dC = Physics::Elasticity::StandardTensors<dim>::Dev_P(F);
 
-    double H    = J * log((J - f_1)/(1 - f_1));
-    double dHdJ = log((J - f_1)/(1 - f_1)) + J/(J - f_1);
+    double H    = J * log((J - f_1)/(1.0 - f_1));
+    double dHdJ = log((J - f_1)/(1.0 - f_1)) + J/(J - f_1);
 
     // Derivative of the hydrostatic part of the stress
     SymmetricTensor<4, dim> dS_h_dC;
 
-    dS_h_dC = K * dHdJ * outer_product(C_inv, ddet_F_dC)
-            + K * H * dC_inv_dC;
+    dS_h_dC = K * dHdJ * outer_product(C_inv, ddet_F_dC) + K * H * dC_inv_dC;
 
     double lambda = sqrt(trace(B_bar) / 3.0);
 
     double y = lambda / lambda_L;
 
-    SymmetricTensor<2, dim> dlambda_dC = (I * dC_bar_dC) / (6 * lambda);
+    SymmetricTensor<2, dim> dlambda_dC = (I * dC_bar_dC) / (6.0 * lambda);
 
     // Derivative of the deviatoric part of the stress
     SymmetricTensor<4, dim> dS_d_dC;
@@ -169,7 +168,7 @@ void Material<dim>::compute_spatial_tangent_modulus() {
                 ,
                 dlambda_dC);
 
-    dS_d_dC_2 = - (2.0 / 3.0) * pow(J, -2.0/3.0) * outer_product(I, ddet_F_dC);
+    dS_d_dC_2 = - (2.0 / 3.0) * pow(J, -5.0/3.0) * outer_product(I, ddet_F_dC);
 
     dS_d_dC_3 = - 2.0 * lambda * outer_product(C_inv, dlambda_dC);
 
@@ -181,6 +180,6 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dS_dC = dS_h_dC + dS_d_dC;
 
-    spatial_tangent_modulus = J * Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
+    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
 
 }
