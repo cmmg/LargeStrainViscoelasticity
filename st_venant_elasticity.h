@@ -38,8 +38,8 @@ Material<dim>::Material() {
 template <int dim>
 void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler) {
 
-    K    = parameter_handler.get_double("bulk modulus");
-    mu_0 = parameter_handler.get_double("shear modulus");
+    K    = parameter_handler.get_double("K");
+    mu_0 = parameter_handler.get_double("mu0");
 
 }
 
@@ -62,7 +62,7 @@ void Material<dim>::perform_constitutive_update() {
 
     Tensor<2, dim> F = deformation_gradient;
 
-    double J = determinant(F);
+    /*double J = determinant(F);*/
 
     SymmetricTensor<2, dim> E = Physics::Elasticity::Kinematics::E(F);
 
@@ -83,7 +83,7 @@ void Material<dim>::compute_spatial_tangent_modulus() {
     SymmetricTensor<4, dim> C   = (K - 2.0 * mu_0 / 3.0) * IxI + 2 * mu_0 * S;
 
     Tensor<2, dim> F = deformation_gradient;
-    double J = determinant(F);
+    /*double J = determinant(F);*/
 
     spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(C, F);
 }

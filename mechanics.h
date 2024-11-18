@@ -117,7 +117,8 @@ void Material<dim>::perform_constitutive_update() {
                                 * inverse_Langevin(lambda / lambda_L)
                                 * deviator(B_bar); 
 
-    kirchhoff_stress = J * (T_h + T_d);
+    /*kirchhoff_stress = J * (T_h + T_d);*/
+    kirchhoff_stress = 1.0 * (T_h + T_d);
 
 }
 

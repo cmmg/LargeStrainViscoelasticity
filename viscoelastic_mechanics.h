@@ -42,7 +42,7 @@ class Material {
         SymmetricTensor<2, dim> compute_deviatoric_stress(SymmetricTensor<2, dim> B_A_bar);
         SymmetricTensor<2, dim> hencky_strain(Tensor<2, dim> F);
         SymmetricTensor<2, dim> square_root(SymmetricTensor<2, dim> B);
-        SymmetricTensor<2, dim> multiply_symmetric_tensors(SymmetricTensor<2, dim> A, SymmetricTensor<2, dim> B);
+                 Tensor<2, dim> multiply_symmetric_tensors(SymmetricTensor<2, dim> A, SymmetricTensor<2, dim> B);
 };
 
 template <int dim>
@@ -136,9 +136,11 @@ SymmetricTensor<2, dim> Material<dim>::square_root(SymmetricTensor<2, dim> B) {
 }
 
 template <int dim>
-SymmetricTensor<2, dim> Material<dim>::multiply_symmetric_tensors(SymmetricTensor<2, dim> A, SymmetricTensor<2, dim> B) {
+Tensor<2, dim> Material<dim>::multiply_symmetric_tensors(
+    SymmetricTensor<2, dim> A,
+    SymmetricTensor<2, dim> B) {
 
-    SymmetricTensor<2, dim> tmp;
+    Tensor<2, dim> tmp;
 
     for(unsigned int i = 0; i < dim; ++i) {
         for(unsigned int j = 0; j < dim; ++j) {
@@ -355,7 +357,7 @@ void Material<dim>::perform_constitutive_update() {
 
     } // End of constitutive update loop
 
-    kirchhoff_stress = J * T_A;
+    kirchhoff_stress = T_A;
 
 }
 
@@ -434,11 +436,11 @@ void Material<dim>::compute_spatial_tangent_modulus() {
     SymmetricTensor<2, dim> T_B_dev = deviator(T_B);
     SymmetricTensor<2, dim> S_B = symmetrize(F_inv * T_B_dev * transpose(F_inv));
 
-    SymmetricTensor<2, dim> C_SB    = multiply_symmetric_tensors(C, S_B);
-    SymmetricTensor<2, dim> SB_C_SB = multiply_symmetric_tensors(S_B, C_SB);
+             Tensor<2, dim> C_SB    = multiply_symmetric_tensors(C, S_B);
+    SymmetricTensor<2, dim> SB_C_SB = symmetrize(S_B * C_SB);
 
-    SymmetricTensor<2, dim> SB_C   = multiply_symmetric_tensors(S_B, C);
-    SymmetricTensor<2, dim> C_SB_C = multiply_symmetric_tensors(C, SB_C);
+             Tensor<2, dim> SB_C   = multiply_symmetric_tensors(S_B, C);
+    SymmetricTensor<2, dim> C_SB_C = symmetrize(C * SB_C);
 
     double T_B_mod = T_B_dev.norm();
 
@@ -464,7 +466,7 @@ void Material<dim>::compute_spatial_tangent_modulus() {
         * S;
 
     B_5 = g_1
-        * J * (C_SB * SB_C) * (n-1) * pow(T_B_mod, n-3) * pow(g_2, -2.0)
+        * J * trace(C_SB * SB_C) * (n-1) * pow(T_B_mod, n-3) * pow(g_2, -2.0)
         * outer_product(S_B, dJ_dC);
 
     SymmetricTensor<4, dim> C_1 = invert(S - B_1 * delta_t) * (B_2 + B_5) * delta_t;

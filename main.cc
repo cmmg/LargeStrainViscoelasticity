@@ -131,7 +131,7 @@ Problem<dim>::Problem () :
             quadrature_formula,
             update_values |
             update_JxW_values),
-    max_no_of_NR_iterations(20),
+    max_no_of_NR_iterations(10),
     parameters_file("parameters.json"),
     text_output_file("text_output_file.txt")
     {}
@@ -160,9 +160,22 @@ void Problem<dim>::run () {
 
     while (current_time < total_time) {
 
-        current_time += delta_t; 
+        /*if (current_time < 0.25) delta_t = 1e-3;*/
+        /*if (current_time >= 0.25 and current_time < 0.3) delta_t = 0.5e-3;*/
+        /*if (current_time >= 0.3 and current_time < 0.4) delta_t = 0.25e-3;*/
+        /*if (current_time >= 0.4 and current_time < 0.45) delta_t = 0.1e-3;*/
+        /*if (current_time >= 0.45 and current_time < 0.5) delta_t = 0.05e-3;*/
 
-        if (current_time > total_time) current_time = total_time;
+        if (current_time + delta_t > total_time) {
+
+            delta_t = total_time - current_time;
+            current_time = total_time;
+
+        } else {
+
+            current_time += delta_t; 
+
+        }
 
         step_number++;
 
@@ -205,15 +218,15 @@ void Problem<dim>::run () {
 
             std::cout 
                 << "Iteration : " << iterations << " "
-                << "Residual norm : " << residual_norm << " "
-                << "Relative norm : " << residual_norm / initial_residual_norm
-                << "\n";
+                << "Force norm : " << residual_norm << " "
+                << "Displacement norm : " << delta_solution.l2_norm() << " "
+                << std::endl;
 
             if (initial_residual_norm == 0 
                 or
-                (residual_norm / initial_residual_norm < relative_tolerance
+                (residual_norm < 1e-9
                 and
-                residual_norm < absolute_tolerance) 
+                delta_solution.l2_norm() < 1e-6) 
             ) {
 
                 std::cout 
@@ -865,6 +878,8 @@ void Problem<dim>::assemble_linear_system () {
     Tensor<2, dim> F;    // Deformation gradient
     Tensor<2, dim> Finv; // Inverse of the deformation gradient
 
+    double J; // Determinant(F)
+
     SymmetricTensor<2, dim> Js; // Kirchhoff stress
     SymmetricTensor<4, dim> Jc; // Spatial tangent modulus * determinant(F)
 
@@ -894,6 +909,8 @@ void Problem<dim>::assemble_linear_system () {
             Js = quadrature_point_history_data[q]->kirchhoff_stress;
             Jc = quadrature_point_history_data[q]->spatial_tangent_modulus;
 
+            J  = determinant(F);
+
             Finv = invert(F);
 
             for (unsigned int i = 0; i < dofs_per_cell; ++i) {
@@ -912,7 +929,7 @@ void Problem<dim>::assemble_linear_system () {
                         dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
 
                 for (unsigned int di = 0; di < dim; ++di)
-                    cell_rhs(i) += -dphidx_i[di] * Js[ci][di] * fe_values.JxW(q);
+                    cell_rhs(i) += -dphidx_i[di] * Js[ci][di] * J * fe_values.JxW(q);
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j) {
 
@@ -935,12 +952,12 @@ void Problem<dim>::assemble_linear_system () {
                                 dphidx_i[di] *
                                 Jc[ci][di][cj][dj] *
                                 dphidx_j[dj] *
-                                fe_values.JxW(q)
+                                J * fe_values.JxW(q)
                                 +
                                 dphidx_i[di] *
                                 delta[ci][cj] * Js[di][dj] *
                                 dphidx_j[dj] *
-                                fe_values.JxW(q);
+                                J * fe_values.JxW(q);
                         }
                     }
                 } // End of j loop
@@ -1000,7 +1017,7 @@ void Problem<dim>::solve_linear_system () {
     delta_solution = 0.0;
 
     // The solver will do a maximum of 1000 iterations before giving up
-    SolverControl solver_control(1000, 1e-12);
+    SolverControl solver_control(1000, 1e-50);
     SolverCG<Vector<double>> solver_cg(solver_control);
     solver_cg.solve(system_matrix,
                     delta_solution,
