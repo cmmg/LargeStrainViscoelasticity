@@ -16,6 +16,9 @@ class Material {
         SymmetricTensor<4, dim> spatial_tangent_modulus;
 
         double delta_t;
+        unsigned int integration_point_index;
+
+        std::ofstream *text_output_file;
 
     private:
 
@@ -213,7 +216,9 @@ void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler
 
 template <int dim>
 void Material<dim>::perform_constitutive_update() {
-    
+
+    *text_output_file << "q = " << integration_point_index << std::endl;
+
     // This function performs the constitutive update for this material class.
     // It assumes that whatever piece of code has called this function, has
     // already set the deformation graident to its latest values before calling

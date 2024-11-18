@@ -368,6 +368,8 @@ void Problem<dim>::setup_system () {
         for (unsigned int q = 0; q < fe_values.n_quadrature_points; ++q) {
             quadrature_point_history_data[q]->load_material_parameters(parameter_handler);
             quadrature_point_history_data[q]->compute_initial_tangent_modulus();
+            quadrature_point_history_data[q]->integration_point_index = q + 1;
+            quadrature_point_history_data[q]->text_output_file = &text_output_file;
         }
 
         parameter_handler.leave_subsection();
@@ -990,8 +992,6 @@ void Problem<dim>::assemble_linear_system () {
                         system_rhs);
 
         }
-
-        /*system_matrix.print(text_output_file, false, false);*/
 
     } // End of loop over all cells
 
