@@ -12,7 +12,7 @@ class Material {
         void compute_spatial_tangent_modulus();
 
         Tensor<2, dim>          deformation_gradient; 
-        SymmetricTensor<2, dim> kirchhoff_stress;
+        SymmetricTensor<2, dim> cauchy_stress;
         SymmetricTensor<4, dim> spatial_tangent_modulus;
 
         double delta_t;
@@ -36,7 +36,7 @@ Material<dim>::Material() {
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 
     deformation_gradient = I;
-    kirchhoff_stress = 0;
+    cauchy_stress = 0;
 
 }
 
@@ -65,20 +65,17 @@ void Material<dim>::compute_initial_tangent_modulus() {
 template <int dim>
 void Material<dim>::perform_constitutive_update() {
 
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
-
     Tensor<2, dim> F = deformation_gradient;
 
-    double J = determinant(F);
+    SymmetricTensor<2, dim> epsilon = 0.5 * symmetrize(F + transpose(F));
 
-    SymmetricTensor<2, dim> T_h = K * log(J) * I;
+    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 
-    SymmetricTensor<2, dim> B_bar = pow(J, -2.0/3.0)
-                                  * symmetrize(F * transpose(F));
-    
-    SymmetricTensor<2, dim> T_d = mu_0 * deviator(B_bar);
+    SymmetricTensor<2, dim> sigma_h = K * trace(epsilon) * I;
 
-    kirchhoff_stress = T_h + T_d;
+    SymmetricTensor<2, dim> sigma_d = mu_0 * deviator(epsilon);
+
+    cauchy_stress = sigma_h + sigma_d;
 
 }
 
