@@ -38,7 +38,8 @@ using namespace dealii;
 #include <iostream>
 
 /*#include "mechanics.h"*/
-#include "viscoelastic_mechanics.h"
+/*#include "viscoelastic_mechanics.h"*/
+#include "viscoelastic_mechanics_bottom_up.h"
 /*#include "st_venant_elasticity.h"*/
 
 template <int dim>
