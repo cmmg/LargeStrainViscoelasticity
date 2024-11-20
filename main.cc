@@ -160,12 +160,6 @@ void Problem<dim>::run () {
 
     while (current_time < total_time) {
 
-        /*if (current_time < 0.25) delta_t = 1e-3;*/
-        /*if (current_time >= 0.25 and current_time < 0.3) delta_t = 0.5e-3;*/
-        /*if (current_time >= 0.3 and current_time < 0.4) delta_t = 0.25e-3;*/
-        /*if (current_time >= 0.4 and current_time < 0.45) delta_t = 0.1e-3;*/
-        /*if (current_time >= 0.45 and current_time < 0.5) delta_t = 0.05e-3;*/
-
         if (current_time + delta_t > total_time) {
 
             delta_t = total_time - current_time;
@@ -185,6 +179,7 @@ void Problem<dim>::run () {
                   << "Current time : " << current_time
                   << "\n";
 
+        // Reset the number of iterations for every time step
         iterations = 0;
 
         // Generate homogenous and non homogenous boundary conditions for the
@@ -210,24 +205,19 @@ void Problem<dim>::run () {
             assemble_linear_system();
             calculate_residual_norm();
 
+            std::cout 
+                << "Iteration : " << iterations << " "
+                << "Relative force norm : " << residual_norm / initial_residual_norm << " "
+                << std::endl;
+
             if (iterations == max_no_of_NR_iterations) {
-                std::cout 
-                << "\nMax Newton-Raphson iterations reached. Exiting program.\n";
+                std::cout << "\nMax Newton-Raphson iterations reached. Exiting program.\n";
                 exit(0);
             }
 
-            std::cout 
-                << "Iteration : " << iterations << " "
-                << "Force norm : " << residual_norm << " "
-                << "Displacement norm : " << delta_solution.l2_norm() << " "
-                << std::endl;
-
             if (initial_residual_norm == 0 
                 or
-                (residual_norm < 1e-9
-                and
-                delta_solution.l2_norm() < 1e-6) 
-            ) {
+                residual_norm / initial_residual_norm < 1e-9) {
 
                 std::cout 
                     << "Step converged in " 
@@ -243,7 +233,7 @@ void Problem<dim>::run () {
             update_all_history_data();
             iterations++;
 
-        }
+        } // Nonlinear time step converged. Time to write to result files.
 
         perform_L2_projections();
 
@@ -1029,6 +1019,7 @@ void Problem<dim>::solve_linear_system () {
 
     solution += delta_solution;
 
+    system_matrix.print(text_output_file, false, false);
     text_output_file << "system_rhs     = " << system_rhs << std::endl;
     text_output_file << "delta_solution = " << delta_solution << std::endl;
     text_output_file << "solution       = " << solution << std::endl;
