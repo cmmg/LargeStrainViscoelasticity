@@ -217,8 +217,6 @@ void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler
 template <int dim>
 void Material<dim>::perform_constitutive_update() {
 
-    *text_output_file << "q = " << integration_point_index << std::endl;
-
     // This function performs the constitutive update for this material class.
     // It assumes that whatever piece of code has called this function, has
     // already set the deformation graident to its latest values before calling
@@ -351,6 +349,11 @@ void Material<dim>::perform_constitutive_update() {
             F_B = F_B_new;
             F_D = F_D_new;
 
+            /*if (integration_point_index == 1) {*/
+            /*    std::cout << "T_h = " << T_h << std::endl;*/
+            /*    std::cout << "T_d = " << T_d << std::endl;*/
+            /*}*/
+
             break;
 
         } else {
@@ -477,9 +480,7 @@ void Material<dim>::compute_spatial_tangent_modulus() {
     SymmetricTensor<4, dim> C_1 = invert(S - B_1 * delta_t) * (B_2 + B_5) * delta_t;
     SymmetricTensor<4, dim> C_2 = invert(S - B_1 * delta_t) * (B_3 + B_4) * delta_t;
 
-    SymmetricTensor<4, dim> dS_d_dC;
-
-    dS_d_dC = invert(S - A_5 * C_2) * (A_4 + A_5 * C_1);
+    SymmetricTensor<4, dim> dS_d_dC = invert(S - A_5 * C_2) * (A_4 + A_5 * C_1);
 
     SymmetricTensor<4, dim> dS_h_dC;
 
@@ -490,6 +491,6 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
 
-    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2 * dS_dC, F);
+    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
 
 }
