@@ -192,10 +192,22 @@ void Problem<dim>::run () {
         // the initial norm of the residual to be used for the convergence
         // criterion.
 
+        delta_solution = 0.0;
+
+        non_homogenous_constraints.distribute(delta_solution);
+
+        solution += delta_solution;
+
+        /*std::cout << "delta_solution = " << delta_solution << std::endl;*/
+        /*std::cout << "Printing from run function" << std::endl;*/
+        /*std::cout << "solution       = " << solution << std::endl;*/
+
+        update_all_history_data();
         assemble_linear_system();
         calculate_residual_norm();
         initial_residual_norm = residual_norm;
         std::cout << "Initial norm : " << residual_norm << "\n";
+
         solve_linear_system();
         update_all_history_data();
         iterations++;
@@ -228,6 +240,11 @@ void Problem<dim>::run () {
 
                 break;
             }
+
+            /*if (iterations == 3) {*/
+            /*    std::cout << "Exiting." << std::endl; */
+            /*    exit(0);*/
+            /*}*/
 
             solve_linear_system();
 
@@ -898,11 +915,10 @@ void Problem<dim>::assemble_linear_system () {
         // Quadrature loop for current cell and degrees of freedom i, j
         for (unsigned int q = 0; q < n_quadrature_points; ++q) {
 
-            F  = quadrature_point_history_data[q]->deformation_gradient;
+            F = quadrature_point_history_data[q]->deformation_gradient;
             s = quadrature_point_history_data[q]->cauchy_stress;
             c = quadrature_point_history_data[q]->spatial_tangent_modulus;
-
-            J  = determinant(F);
+            J = determinant(F);
 
             Finv = invert(F);
 
@@ -961,6 +977,14 @@ void Problem<dim>::assemble_linear_system () {
         cell->get_dof_indices(local_dof_indices);
 
         if (iterations == 0) {
+
+            /*system_matrix.print(text_output_file, false, false);*/
+            cell_matrix.print_formatted(text_output_file, 3, false, 0, "0");
+            text_output_file << "cell_rhs     = " << cell_rhs << std::endl;;
+            text_output_file << "delta_solution = " << delta_solution << std::endl;
+            text_output_file << "solution       = " << solution << std::endl;
+            text_output_file << std::endl;
+
             // Apply non-homogenous boundary conditions only in the first
             // iteration of the increment.
             non_homogenous_constraints.distribute_local_to_global(
@@ -969,6 +993,13 @@ void Problem<dim>::assemble_linear_system () {
                         local_dof_indices,
                         system_matrix,
                         system_rhs);
+
+            system_matrix.print(text_output_file, false, false);
+            /*cell_matrix.print_formatted(text_output_file, 3, false, 0, "0");*/
+            text_output_file << "system_rhs     = " << system_rhs << std::endl;;
+            text_output_file << "delta_solution = " << delta_solution << std::endl;
+            text_output_file << "solution       = " << solution << std::endl;
+            text_output_file << std::endl;
 
         } else {
             // Non-homogenous boundary conditions will be satisfied in the
@@ -1015,16 +1046,10 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    if (iterations == 0) 
-        non_homogenous_constraints.distribute(delta_solution);
+    /*if (iterations == 0) */
+    /*    non_homogenous_constraints.distribute(delta_solution);*/
 
     solution += delta_solution;
-
-    system_matrix.print(text_output_file, false, false);
-    text_output_file << "system_rhs     = " << system_rhs << std::endl;
-    text_output_file << "delta_solution = " << delta_solution << std::endl;
-    text_output_file << "solution       = " << solution << std::endl;
-    text_output_file << std::endl;
 
 }
 
@@ -1052,6 +1077,8 @@ void Problem<dim>::update_all_history_data () {
     Tensor<2, dim> F_D;
     SymmetricTensor<2, dim> T_A;
     SymmetricTensor<4, dim> Jc;
+
+    /*std::cout << "Printing from update function" << std::endl;*/
 
     for (auto &cell : dof_handler.active_cell_iterators()) {
 
@@ -1083,6 +1110,11 @@ void Problem<dim>::update_all_history_data () {
             quadrature_point_history_data[q]->delta_t = delta_t;
             quadrature_point_history_data[q]->perform_constitutive_update();
             quadrature_point_history_data[q]->compute_spatial_tangent_modulus();
+
+            /*if (q == 0) {*/
+            /*    std::cout << "F = " << F << std::endl;*/
+            /*    std::cout << "sigma = " << quadrature_point_history_data[q]->cauchy_stress << std::endl;*/
+            /*}*/
 
         } // End of loop over quadrature points
     }

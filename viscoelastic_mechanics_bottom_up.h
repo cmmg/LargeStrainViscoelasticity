@@ -43,9 +43,9 @@ Material<dim>::Material() {
 template <int dim>
 void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler) {
 
-    K           = parameter_handler.get_double("K");
-    mu_0        = parameter_handler.get_double("mu0");
-        
+    K    = parameter_handler.get_double("K");
+    mu_0 = parameter_handler.get_double("mu0");
+
 }
 
 template <int dim>
@@ -65,17 +65,16 @@ void Material<dim>::compute_initial_tangent_modulus() {
 template <int dim>
 void Material<dim>::perform_constitutive_update() {
 
-    Tensor<2, dim> F = deformation_gradient;
-
-    SymmetricTensor<2, dim> epsilon = 0.5 * symmetrize(F + transpose(F));
-
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 
-    SymmetricTensor<2, dim> sigma_h = K * trace(epsilon) * I;
+    Tensor<2, dim> F = deformation_gradient;
 
-    SymmetricTensor<2, dim> sigma_d = mu_0 * deviator(epsilon);
+    SymmetricTensor<2, dim> epsilon = 0.5 * symmetrize(F + transpose(F)) - I;
 
-    cauchy_stress = sigma_h + sigma_d;
+    /*std::cout << "epsilon = " << epsilon << std::endl;*/
+
+    cauchy_stress = (K - 2.0 * mu_0 / 3.0) * trace(epsilon) * I
+                  + 2 * mu_0 * epsilon;
 
 }
 
