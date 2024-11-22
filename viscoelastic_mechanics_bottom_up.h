@@ -28,6 +28,10 @@ class Material {
         double mu_0; // Shear modulus
         double lambda_L; // Maximum stretch
 
+        // Internal variables
+        SymmetricTensor<2, dim> epsilon_A; // Total elastic strain
+        SymmetricTensor<2, dim> epsilon_B; // Accumulated viscous strain
+
 };
 
 template <int dim>
