@@ -22,7 +22,7 @@
         "G0" : 4500.0,
         "Ginfinity" : 600.0,
         "eta" : 60000.0,
-        "gammadot0" : 1e-4,
+        "gammadot0" : 0.0,
         "alpha" : 0.005 
     }
 }

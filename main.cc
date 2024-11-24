@@ -1397,14 +1397,19 @@ void Problem<dim>::output_results () {
 
     data_out.build_patches(q_mapping, fe.degree);;
 
-    std::string output_file_name = 
-            "solution/solution-" 
-            + std::to_string(step_number)
-            + ".vtu";
+    std::string output_file_name = "solution/solution-" 
+                                 + std::to_string(step_number)
+                                 + ".vtu";
 
     std::ofstream output_file(output_file_name);
 
     data_out.write_vtu(output_file);
+
+    // -------------------------------------------------------------------------
+
+    /*text_output_file << nodal_output_L2[5][23] << std::endl;*/
+
+    // -------------------------------------------------------------------------
 
     std::cout << "\nResults written" << std::endl;
 }
