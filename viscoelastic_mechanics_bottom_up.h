@@ -116,10 +116,9 @@ void Material<dim>::perform_constitutive_update() {
     // Total strain of the current. unresolved time step
     SymmetricTensor<2, dim> epsilon = 0.5 * symmetrize(F + transpose(F)) - I;
 
-    cauchy_stress = 3.0 * K * trace(epsilon) * I
-                  + 2.0 * mu_0 * deviator(epsilon);
-
-    return;
+    /*cauchy_stress = 3.0 * K * trace(epsilon) * I*/
+    /*              + 2.0 * mu_0 * deviator(epsilon);*/
+    /*return;*/
 
     // Calculate trial elastic strain state
     SymmetricTensor<2, dim> epsilon_A_trial = epsilon - epsilon_B;
@@ -195,9 +194,9 @@ void Material<dim>::perform_constitutive_update() {
 
         /**text_output_file << "epsilon_A" << " = " << epsilon - epsilon_B << std::endl;*/
         *text_output_file << "cauchy_stress[2][2]" << " = " << cauchy_stress[2][2] << std::endl;
-        *text_output_file << "x" << " = " << x << std::endl;
-        *text_output_file << "epsilon_B" << " = " << epsilon_B << std::endl;
-        *text_output_file << std::endl;
+        /**text_output_file << "x" << " = " << x << std::endl;*/
+        /**text_output_file << "epsilon_B" << " = " << epsilon_B << std::endl;*/
+        /**text_output_file << std::endl;*/
     }
 
     /*if (integration_point_index == 8) {*/
@@ -211,18 +210,17 @@ void Material<dim>::perform_constitutive_update() {
 
 template <int dim>
 void Material<dim>::compute_spatial_tangent_modulus() {
-    compute_initial_tangent_modulus();
-    /**/
-    /*SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;*/
-    /*SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;*/
-    /*SymmetricTensor<4, dim> P   = S - (1.0/3.0) * IxI;*/
-    /**/
-    /*SymmetricTensor<4, dim> L_3 = pow(sigma_d_norm, n - 1.0) * S*/
-    /*                            + (n - 1.0) * pow(sigma_d_norm, n - 3.0)*/
-    /*                            * outer_product(sigma_d, sigma_d);*/
-    /**/
-    /*SymmetricTensor<4, dim> L_2 = gamma_dot_0 * pow(sigma_0, n) * L_3 * P;*/
-    /**/
-    /*spatial_tangent_modulus = invert(S + C_el * L_2 * delta_t) * C_el;*/
-    /**/
+
+    SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
+    SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
+    SymmetricTensor<4, dim> P   = S - (1.0/3.0) * IxI;
+
+    SymmetricTensor<4, dim> L_3 = pow(sigma_d_norm, n - 1.0) * S
+                                + (n - 1.0) * pow(sigma_d_norm, n - 3.0)
+                                * outer_product(sigma_d, sigma_d);
+
+    SymmetricTensor<4, dim> L_2 = gamma_dot_0 * pow(sigma_0, n) * L_3 * P;
+
+    spatial_tangent_modulus = invert(S + C_el * L_2 * delta_t) * C_el;
+
 }

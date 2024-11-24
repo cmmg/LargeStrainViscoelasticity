@@ -249,6 +249,7 @@ void Problem<dim>::run () {
             solve_linear_system();
 
             update_all_history_data();
+            text_output_file << std::endl;
             iterations++;
 
         } // Nonlinear time step converged. Time to write to result files.
