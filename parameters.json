@@ -9,7 +9,7 @@
         "relative tolerance" : 1e-12,
         "absolute tolerance" : 1e-12,
         "time step length" : 1e-5,
-        "total simulation time" : 1e-4
+        "total simulation time" : 1e-3
     }
     ,
     "Viscoelastic Material Parameters" : {
@@ -17,12 +17,12 @@
         "f1" : 0.8,
         "mu0" : 20.0,
         "lambdaL" : 1.2,
-        "sigma0" : 25.0,
-        "n" : 1.0,
+        "sigma0" : 25,
+        "n" : 3.0,
         "G0" : 4500.0,
         "Ginfinity" : 600.0,
         "eta" : 60000.0,
-        "gammadot0" : 1.0e-4,
+        "gammadot0" : 1e-4,
         "alpha" : 0.005 
     }
 }

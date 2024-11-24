@@ -324,6 +324,8 @@ void Problem<dim>::setup_system () {
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
+    /*triangulation.refine_global(1);*/
+
     // Make space for all the history variables of the system
     quadrature_point_history.initialize(triangulation.begin_active(),
                                         triangulation.end(),
@@ -383,8 +385,6 @@ void Problem<dim>::setup_system () {
         parameter_handler.leave_subsection();
 
     }
-
-    /*triangulation.refine_global(1);*/
 
     dof_handler.distribute_dofs(fe);
 
@@ -979,11 +979,11 @@ void Problem<dim>::assemble_linear_system () {
         if (iterations == 0) {
 
             /*system_matrix.print(text_output_file, false, false);*/
-            cell_matrix.print_formatted(text_output_file, 3, false, 0, "0");
-            text_output_file << "cell_rhs     = " << cell_rhs << std::endl;;
-            text_output_file << "delta_solution = " << delta_solution << std::endl;
-            text_output_file << "solution       = " << solution << std::endl;
-            text_output_file << std::endl;
+            /*cell_matrix.print_formatted(text_output_file, 3, false, 0, "0");*/
+            /*text_output_file << "cell_rhs     = " << cell_rhs << std::endl;;*/
+            /*text_output_file << "delta_solution = " << delta_solution << std::endl;*/
+            /*text_output_file << "solution       = " << solution << std::endl;*/
+            /*text_output_file << std::endl;*/
 
             // Apply non-homogenous boundary conditions only in the first
             // iteration of the increment.
@@ -994,12 +994,12 @@ void Problem<dim>::assemble_linear_system () {
                         system_matrix,
                         system_rhs);
 
-            system_matrix.print(text_output_file, false, false);
+            /*system_matrix.print(text_output_file, false, false);*/
             /*cell_matrix.print_formatted(text_output_file, 3, false, 0, "0");*/
-            text_output_file << "system_rhs     = " << system_rhs << std::endl;;
-            text_output_file << "delta_solution = " << delta_solution << std::endl;
-            text_output_file << "solution       = " << solution << std::endl;
-            text_output_file << std::endl;
+            /*text_output_file << "system_rhs     = " << system_rhs << std::endl;;*/
+            /*text_output_file << "delta_solution = " << delta_solution << std::endl;*/
+            /*text_output_file << "solution       = " << solution << std::endl;*/
+            /*text_output_file << std::endl;*/
 
         } else {
             // Non-homogenous boundary conditions will be satisfied in the
