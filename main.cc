@@ -146,7 +146,6 @@ void Problem<dim>::run () {
     parameter_handler.enter_subsection("Time Stepping and Iteration Control");
 
     relative_tolerance = parameter_handler.get_double("relative tolerance");
-    absolute_tolerance = parameter_handler.get_double("absolute tolerance");
     delta_t            = parameter_handler.get_double("time step length");
     total_time         = parameter_handler.get_double("total simulation time");
 
@@ -198,61 +197,50 @@ void Problem<dim>::run () {
 
         solution += delta_solution;
 
-        /*std::cout << "delta_solution = " << delta_solution << std::endl;*/
-        /*std::cout << "Printing from run function" << std::endl;*/
-        /*std::cout << "solution       = " << solution << std::endl;*/
-
         update_all_history_data();
         assemble_linear_system();
         calculate_residual_norm();
         initial_residual_norm = residual_norm;
         std::cout << "Initial norm : " << residual_norm << "\n";
 
-        solve_linear_system();
-        update_all_history_data();
         iterations++;
 
-        // Solve the current, nonlinear increment
-        while (true) {
+        if (initial_residual_norm > 0) {
+            // Solve the current, nonlinear increment
+            while (true) {
 
-            assemble_linear_system();
-            calculate_residual_norm();
-
-            std::cout 
-                << "Iteration : " << iterations << " "
-                << "Relative force norm : " << residual_norm / initial_residual_norm << " "
-                << std::endl;
-
-            if (iterations == max_no_of_NR_iterations) {
-                std::cout << "\nMax Newton-Raphson iterations reached. Exiting program.\n";
-                exit(0);
-            }
-
-            if (initial_residual_norm == 0 
-                or
-                residual_norm / initial_residual_norm < 1e-9) {
+                assemble_linear_system();
+                calculate_residual_norm();
 
                 std::cout 
-                    << "Step converged in " 
-                    << iterations 
-                    << " iteration(s)." 
-                    << std::endl;
+                << "Iteration : " << iterations << " "
+                << "Relative force norm : " << residual_norm / initial_residual_norm 
+                << std::endl;
 
-                break;
-            }
+                if (iterations == max_no_of_NR_iterations) {
+                    std::cout 
+                    << "\nMax global Newton-Raphson iterations reached. Exiting program.\n";
+                    exit(0);
+                }
 
-            /*if (iterations == 3) {*/
-            /*    std::cout << "Exiting." << std::endl; */
-            /*    exit(0);*/
-            /*}*/
+                if (residual_norm / initial_residual_norm < relative_tolerance) {
 
-            solve_linear_system();
+                    std::cout 
+                        << "Step converged in " 
+                        << iterations 
+                        << " iteration(s)." 
+                        << std::endl;
 
-            update_all_history_data();
-            text_output_file << std::endl;
-            iterations++;
+                    break;
+                }
 
-        } // Nonlinear time step converged. Time to write to result files.
+                solve_linear_system();
+
+                update_all_history_data();
+                iterations++;
+
+            } // Nonlinear time step converged. Time to write to result files.
+        } // End of if clause that checks if iterations need to be performed. 
 
         perform_L2_projections();
 
@@ -281,8 +269,7 @@ void Problem<dim>::declare_parameters () {
 
     parameter_handler.enter_subsection("Time Stepping and Iteration Control");
 
-    parameter_handler.declare_entry("relative tolerance", "1e-12", Patterns::Double());
-    parameter_handler.declare_entry("absolute tolerance", "1e-12", Patterns::Double());
+    parameter_handler.declare_entry("relative tolerance", "1e-9", Patterns::Double());
     parameter_handler.declare_entry("time step length", "1e-3", Patterns::Double());
     parameter_handler.declare_entry("total simulation time", "0.5", Patterns::Double());
 
@@ -1047,9 +1034,6 @@ void Problem<dim>::solve_linear_system () {
                     system_rhs,
                     IdentityMatrix(solution.size()));
 
-    /*if (iterations == 0) */
-    /*    non_homogenous_constraints.distribute(delta_solution);*/
-
     solution += delta_solution;
 
 }
@@ -1078,8 +1062,6 @@ void Problem<dim>::update_all_history_data () {
     Tensor<2, dim> F_D;
     SymmetricTensor<2, dim> T_A;
     SymmetricTensor<4, dim> Jc;
-
-    /*std::cout << "Printing from update function" << std::endl;*/
 
     for (auto &cell : dof_handler.active_cell_iterators()) {
 
@@ -1111,11 +1093,6 @@ void Problem<dim>::update_all_history_data () {
             quadrature_point_history_data[q]->delta_t = delta_t;
             quadrature_point_history_data[q]->perform_constitutive_update();
             quadrature_point_history_data[q]->compute_spatial_tangent_modulus();
-
-            /*if (q == 0) {*/
-            /*    std::cout << "F = " << F << std::endl;*/
-            /*    std::cout << "sigma = " << quadrature_point_history_data[q]->cauchy_stress << std::endl;*/
-            /*}*/
 
         } // End of loop over quadrature points
     }
@@ -1408,7 +1385,11 @@ void Problem<dim>::output_results () {
 
     // -------------------------------------------------------------------------
 
-    /*text_output_file << nodal_output_L2[5][23] << std::endl;*/
+    text_output_file 
+        << solution[23] 
+        << " "
+        << nodal_output_L2[5][7] 
+        << std::endl;
 
     // -------------------------------------------------------------------------
 
