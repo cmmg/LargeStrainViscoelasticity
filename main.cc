@@ -1057,13 +1057,6 @@ void Problem<dim>::update_all_history_data () {
     // Temporary structure for holding the quadrature point data
     std::vector<std::shared_ptr<Material<dim>>> quadrature_point_history_data;
 
-    // Variables for retrieving history variables and Cauchy stress from the
-    // integration point level calculations.
-    Tensor<2, dim> F_B;
-    Tensor<2, dim> F_D;
-    SymmetricTensor<2, dim> T_A;
-    SymmetricTensor<4, dim> Jc;
-
     for (auto &cell : dof_handler.active_cell_iterators()) {
 
         // Initialize the fe_values object with values relevant to the current cell
