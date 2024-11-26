@@ -17,6 +17,7 @@ class Material {
 
         double delta_t;
         unsigned int integration_point_index;
+        unsigned int cell_index;
 
         std::ofstream *text_output_file;
 
@@ -125,55 +126,61 @@ void Material<dim>::perform_constitutive_update() {
     SymmetricTensor<2, dim> epsilon_A_trial = epsilon - epsilon_B;
     SymmetricTensor<2, dim> sigma_d_trial = 2 * mu_0 * deviator(epsilon_A_trial);
 
-    // N_B_trial is the direction of the trial elastic state
-    N_B_trial = sigma_d_trial / sigma_d_trial.norm();
-    // sigma_d_norm_trial is the magnitude of the trial elastic state
-    double sigma_d_norm_trial = sigma_d_trial.norm();
+    if (sigma_d_trial.norm() == 0) {
 
-    // x is the amount by which the norm of the trial deviatoric stress has to
-    // be decreased to get the norm of the actual deviatoric stress state. It
-    // is calculated in this implementation of viscoelasticity using Newton
-    // Raphson iterations. The use of Newton-Raphson iterations in possible in
-    // this case due to the use of a flow rule that allows a return mapping
-    // algorithm.
-    x = 0;
+        sigma_d = 0;
 
-    double local_NR_function_initial    = NR_function(x, sigma_d_norm_trial);
-    double local_NR_function_derivative = NR_function_derivative(x, sigma_d_norm_trial);
-    double local_NR_function = local_NR_function_initial;
+    } else {
+        // N_B_trial is the direction of the trial elastic state
+        N_B_trial = sigma_d_trial / sigma_d_trial.norm();
+        // sigma_d_norm_trial is the magnitude of the trial elastic state
+        double sigma_d_norm_trial = sigma_d_trial.norm();
 
-    unsigned int local_iterations = 0;
-    unsigned int max_local_iterations = 10;
+        // x is the amount by which the norm of the trial deviatoric stress has to
+        // be decreased to get the norm of the actual deviatoric stress state. It
+        // is calculated in this implementation of viscoelasticity using Newton
+        // Raphson iterations. The use of Newton-Raphson iterations in possible in
+        // this case due to the use of a flow rule that allows a return mapping
+        // algorithm.
+        x = 0;
 
-    while (fabs(local_NR_function / local_NR_function_initial) > 1e-9) {
+        double local_NR_function_initial    = NR_function(x, sigma_d_norm_trial);
+        double local_NR_function_derivative = NR_function_derivative(x, sigma_d_norm_trial);
+        double local_NR_function = local_NR_function_initial;
 
-        x -= local_NR_function / local_NR_function_derivative;
+        unsigned int local_iterations = 0;
+        unsigned int max_local_iterations = 10;
 
-        // When this condition was added, x + sigma_d_norm_trial was being
-        // raised to a fractional power. Therefore, it is not correct to have
-        // this sum be negative.
-        while (x + sigma_d_norm_trial < 0) {
-            x *= 0.5;
-        } 
+        while (fabs(local_NR_function / local_NR_function_initial) > 1e-9) {
 
-        local_NR_function            = NR_function(x, sigma_d_norm_trial);
-        local_NR_function_derivative = NR_function_derivative(x, sigma_d_norm_trial);
+            x -= local_NR_function / local_NR_function_derivative;
 
-        local_iterations++;
+            // When this condition was added, x + sigma_d_norm_trial was being
+            // raised to a fractional power. Therefore, it is not correct to have
+            // this sum be negative.
+            while (x + sigma_d_norm_trial < 0) {
+                x *= 0.5;
+            } 
 
-        if (local_iterations == max_local_iterations) {
-            std::cout
-            << "Too many iterations for integrating the constitutive"
-            << " equations. Exiting."
-            << std::endl;
+            local_NR_function            = NR_function(x, sigma_d_norm_trial);
+            local_NR_function_derivative = NR_function_derivative(x, sigma_d_norm_trial);
 
-            exit(0);
+            local_iterations++;
+
+            if (local_iterations == max_local_iterations) {
+                std::cout
+                << "Too many iterations for integrating the constitutive"
+                << " equations. Exiting."
+                << std::endl;
+
+                exit(0);
+            }
         }
+
+        sigma_d_norm = sigma_d_norm_trial + x;
+
+        sigma_d = sigma_d_norm * N_B_trial;
     }
-
-    sigma_d_norm = sigma_d_norm_trial + x;
-
-    sigma_d = sigma_d_norm * N_B_trial;
 
     cauchy_stress = sigma_d + K * trace(epsilon) * I;
 

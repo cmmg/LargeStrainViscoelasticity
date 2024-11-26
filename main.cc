@@ -312,7 +312,7 @@ void Problem<dim>::setup_system () {
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
-    /*triangulation.refine_global(1);*/
+    triangulation.refine_global(1);
 
     // Make space for all the history variables of the system
     quadrature_point_history.initialize(triangulation.begin_active(),
@@ -367,6 +367,7 @@ void Problem<dim>::setup_system () {
             quadrature_point_history_data[q]->load_material_parameters(parameter_handler);
             quadrature_point_history_data[q]->compute_initial_tangent_modulus();
             quadrature_point_history_data[q]->integration_point_index = q + 1;
+            quadrature_point_history_data[q]->cell_index = cell->active_cell_index() + 1;
             quadrature_point_history_data[q]->text_output_file = &text_output_file;
         }
 
@@ -1027,7 +1028,7 @@ void Problem<dim>::solve_linear_system () {
     delta_solution = 0.0;
 
     // The solver will do a maximum of 1000 iterations before giving up
-    SolverControl solver_control(1000, 1e-50);
+    SolverControl solver_control(1000, 1e-12);
     SolverCG<Vector<double>> solver_cg(solver_control);
     solver_cg.solve(system_matrix,
                     delta_solution,
@@ -1095,7 +1096,7 @@ void Problem<dim>::update_all_history_data () {
             quadrature_point_history_data[q]->compute_spatial_tangent_modulus();
 
         } // End of loop over quadrature points
-    }
+    } // End of loop over all cells
 }    
 
 template <int dim>
@@ -1381,15 +1382,15 @@ void Problem<dim>::output_results () {
 
     std::ofstream output_file(output_file_name);
 
-    data_out.write_vtu(output_file);
+    /*data_out.write_vtu(output_file);*/
 
     // -------------------------------------------------------------------------
 
-    text_output_file 
-        << solution[23] 
-        << " "
-        << nodal_output_L2[5][7] 
-        << std::endl;
+    /*text_output_file */
+    /*    << solution[23] */
+    /*    << " "*/
+    /*    << nodal_output_L2[5][7] */
+    /*    << std::endl;*/
 
     // -------------------------------------------------------------------------
 
