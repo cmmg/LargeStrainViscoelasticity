@@ -209,12 +209,15 @@ void Problem<dim>::run () {
             // Solve the current, nonlinear increment
             while (true) {
 
+                solve_linear_system();
+                update_all_history_data();
                 assemble_linear_system();
                 calculate_residual_norm();
 
                 std::cout 
-                << "Iteration : " << iterations << " "
-                << "Relative force norm : " << residual_norm / initial_residual_norm 
+                << "Iteration : " << iterations << " | "
+                << "Total force norm : " << residual_norm << " | "
+                << "Relative force norm : " << residual_norm / initial_residual_norm
                 << std::endl;
 
                 if (iterations == max_no_of_NR_iterations) {
@@ -234,9 +237,6 @@ void Problem<dim>::run () {
                     break;
                 }
 
-                solve_linear_system();
-
-                update_all_history_data();
                 iterations++;
 
             } // Nonlinear time step converged. Time to write to result files.
@@ -312,7 +312,7 @@ void Problem<dim>::setup_system () {
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
-    triangulation.refine_global(1);
+    triangulation.refine_global(2);
 
     // Make space for all the history variables of the system
     quadrature_point_history.initialize(triangulation.begin_active(),
@@ -451,10 +451,10 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    /*constrained_shear_no_lateral_displacement   = true;*/
+    constrained_shear_no_lateral_displacement   = true;
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    uniaxial_compression                        = true;
+    /*uniaxial_compression                        = true;*/
 
     parameter_handler.enter_subsection("Domain Geometry");
     double height = parameter_handler.get_double("height");
@@ -983,13 +983,6 @@ void Problem<dim>::assemble_linear_system () {
                         system_matrix,
                         system_rhs);
 
-            /*system_matrix.print(text_output_file, false, false);*/
-            /*cell_matrix.print_formatted(text_output_file, 3, false, 0, "0");*/
-            /*text_output_file << "system_rhs     = " << system_rhs << std::endl;;*/
-            /*text_output_file << "delta_solution = " << delta_solution << std::endl;*/
-            /*text_output_file << "solution       = " << solution << std::endl;*/
-            /*text_output_file << std::endl;*/
-
         } else {
             // Non-homogenous boundary conditions will be satisfied in the
             // first iteration of the increment. No need to change the
@@ -1005,6 +998,12 @@ void Problem<dim>::assemble_linear_system () {
         }
 
     } // End of loop over all cells
+
+    /*system_matrix.print(text_output_file, false, false);*/
+    /*text_output_file << "system_rhs     = " << system_rhs << std::endl;;*/
+    /*text_output_file << "delta_solution = " << delta_solution << std::endl;*/
+    /*text_output_file << "solution       = " << solution << std::endl;*/
+    /*text_output_file << std::endl;*/
 
 }
 
@@ -1375,14 +1374,14 @@ void Problem<dim>::output_results () {
 
     std::ofstream output_file(output_file_name);
 
-    /*data_out.write_vtu(output_file);*/
+    data_out.write_vtu(output_file);
 
     // -------------------------------------------------------------------------
 
     /*text_output_file */
-    /*    << solution[23] */
+    /*    << solution[dof_handler.n_dofs() - 2] */
     /*    << " "*/
-    /*    << nodal_output_L2[5][7] */
+    /*    << nodal_output_L2[4][triangulation.n_vertices() - 1] */
     /*    << std::endl;*/
 
     // -------------------------------------------------------------------------

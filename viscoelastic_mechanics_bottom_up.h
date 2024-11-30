@@ -188,21 +188,36 @@ void Material<dim>::perform_constitutive_update() {
 
     epsilon_B = epsilon - epsilon_A;
 
+    if (cell_index == 64 and integration_point_index == 8) {
+        *text_output_file
+        << "epsilon = " << epsilon << "\n"
+        << "epsilon_A = " << epsilon_A << "\n"
+        << "epsilon_B = " << epsilon_B << "\n"
+        << std::endl;
+    }
+
 }
 
 template <int dim>
 void Material<dim>::compute_spatial_tangent_modulus() {
 
-    SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
-    SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
-    SymmetricTensor<4, dim> P   = S - (1.0/3.0) * IxI;
 
-    SymmetricTensor<4, dim> L_3 = pow(sigma_d_norm, n - 1.0) * S
-                                + (n - 1.0) * pow(sigma_d_norm, n - 3.0)
-                                * outer_product(sigma_d, sigma_d);
+    if (fabs(sigma_d_norm) > 1e-50) {
 
-    SymmetricTensor<4, dim> L_2 = gamma_dot_0 * pow(sigma_0, -n) * L_3 * P;
+        SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
+        SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
+        SymmetricTensor<4, dim> P   = S - (1.0/3.0) * IxI;
 
-    spatial_tangent_modulus = invert(S + C_el * L_2 * delta_t) * C_el;
+        SymmetricTensor<4, dim> L_0 = (n - 1.0) * outer_product(N_B_trial, N_B_trial) + S;
+        SymmetricTensor<4, dim> L_1 = pow(sigma_d_norm / sigma_0, n) * gamma_dot_0 * delta_t * L_0;
+        SymmetricTensor<4, dim> L_2 = L_1 / sigma_d_norm;
+
+        spatial_tangent_modulus = invert(S + C_el * L_2 * P) * C_el;
+
+    } else {
+
+        spatial_tangent_modulus = C_el;
+
+    }
 
 }
