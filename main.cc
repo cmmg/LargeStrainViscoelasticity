@@ -39,7 +39,7 @@ using namespace dealii;
 
 /*#include "mechanics.h"*/
 /*#include "viscoelastic_mechanics.h"*/
-#include "viscoelastic_mechanics_bottom_up.h"
+#include "viscoelastic_mechanics_small_strain.h"
 /*#include "st_venant_elasticity.h"*/
 
 template <int dim>
@@ -82,8 +82,8 @@ class Problem {
         quadrature_point_history;
 
         // Time stepping
-        double initial_residual_norm;
-        double residual_norm;
+        double initial_force_norm;
+        double current_force_norm;
         double relative_tolerance;
         double absolute_tolerance;
         double current_time;
@@ -200,12 +200,13 @@ void Problem<dim>::run () {
         update_all_history_data();
         assemble_linear_system();
         calculate_residual_norm();
-        initial_residual_norm = residual_norm;
-        std::cout << "Initial norm : " << residual_norm << "\n";
+        initial_force_norm = current_force_norm;
+        std::cout << "Initial norm : " << current_force_norm << "\n";
 
         iterations++;
 
-        if (initial_residual_norm > 0) {
+        if (initial_force_norm > 0) {
+
             // Solve the current, nonlinear increment
             while (true) {
 
@@ -215,9 +216,9 @@ void Problem<dim>::run () {
                 calculate_residual_norm();
 
                 std::cout 
-                << "Iteration : " << iterations << " | "
-                << "Total force norm : " << residual_norm << " | "
-                << "Relative force norm : " << residual_norm / initial_residual_norm
+                << "Iteration : " << iterations << " "
+                << "Total force norm : " << current_force_norm << " "
+                << "Relative force norm : " << current_force_norm / initial_force_norm
                 << std::endl;
 
                 if (iterations == max_no_of_NR_iterations) {
@@ -226,7 +227,10 @@ void Problem<dim>::run () {
                     exit(0);
                 }
 
-                if (residual_norm / initial_residual_norm < relative_tolerance) {
+                if (current_force_norm / initial_force_norm < relative_tolerance
+                    or 
+                    delta_solution.l2_norm() / solution.l2_norm() < relative_tolerance
+                ) {
 
                     std::cout 
                         << "Step converged in " 
@@ -1017,7 +1021,7 @@ void Problem<dim>::calculate_residual_norm () {
             residual(i) = system_rhs(i);
     }
 
-    residual_norm = residual.l2_norm();
+    current_force_norm = residual.l2_norm();
 
 }
 
