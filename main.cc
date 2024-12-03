@@ -913,7 +913,7 @@ void Problem<dim>::assemble_linear_system () {
         for (unsigned int q = 0; q < n_quadrature_points; ++q) {
 
             F = quadrature_point_history_data[q]->deformation_gradient;
-            s = quadrature_point_history_data[q]->kirchhoff_stress;
+            s = quadrature_point_history_data[q]->cauchy_stress;
             c = quadrature_point_history_data[q]->spatial_tangent_modulus;
             J = determinant(F);
 
@@ -1182,32 +1182,32 @@ void Problem<dim>::perform_L2_projections () {
 
                 sigma_xx_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[0][0] *
+                    quadrature_point_history_data[q]->cauchy_stress[0][0] *
                     fe_values_L2.JxW(q); 
 
                 sigma_xy_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[0][1] *
+                    quadrature_point_history_data[q]->cauchy_stress[0][1] *
                     fe_values_L2.JxW(q); 
 
                 sigma_xz_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[0][2] *
+                    quadrature_point_history_data[q]->cauchy_stress[0][2] *
                     fe_values_L2.JxW(q); 
 
                 sigma_yy_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[1][1] *
+                    quadrature_point_history_data[q]->cauchy_stress[1][1] *
                     fe_values_L2.JxW(q); 
 
                 sigma_yz_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[1][2] *
+                    quadrature_point_history_data[q]->cauchy_stress[1][2] *
                     fe_values_L2.JxW(q); 
 
                 sigma_zz_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->kirchhoff_stress[2][2] *
+                    quadrature_point_history_data[q]->cauchy_stress[2][2] *
                     fe_values_L2.JxW(q); 
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j) {

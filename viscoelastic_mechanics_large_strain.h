@@ -12,7 +12,7 @@ class Material {
         void compute_spatial_tangent_modulus();
 
         Tensor<2, dim>          deformation_gradient; 
-        SymmetricTensor<2, dim> kirchhoff_stress;
+        SymmetricTensor<2, dim> cauchy_stress;
         SymmetricTensor<4, dim> spatial_tangent_modulus;
 
         double delta_t;
@@ -37,8 +37,8 @@ class Material {
 
         // Internal variable
         SymmetricTensor<4, dim> C_el; // Elastic tangent modulus
-        SymmetricTensor<2, dim> tau_d; // deviator(kirchhoff_stress)
-        double tau_d_norm; // norm(deviator(kirchhoff_stress))
+        SymmetricTensor<2, dim> tau_d; // deviator(cauchy_stress)
+        double tau_d_norm; // norm(deviator(cauchy_stress))
 
         // Required functions
         double NR_function(double x, double tau_d_norm_trial);
@@ -54,7 +54,7 @@ Material<dim>::Material() {
     SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
 
     deformation_gradient = I;
-    kirchhoff_stress = 0;
+    cauchy_stress = 0;
 
     F_A = I;
     F_B = I;
@@ -174,8 +174,7 @@ void Material<dim>::perform_constitutive_update() {
 
     SymmetricTensor<2, dim> b_bar = pow(J, -2.0/3.0) * symmetrize(F * transpose(F));
 
-    kirchhoff_stress = K * J * log(J) * I + mu_0 * deviator(b_bar);
-    kirchhoff_stress = kirchhoff_stress / J;
+    cauchy_stress = K * log(J) * I + (mu_0/J) * deviator(b_bar);
 
     /*Tensor<2, dim> F_bar = pow(J, -2.0/3.0) * F;*/
     /**/
