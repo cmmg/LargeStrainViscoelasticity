@@ -37,8 +37,7 @@ using namespace dealii;
 
 #include <iostream>
 
-/*#include "viscoelastic_mechanics_small_strain.h"*/
-#include "viscoelastic_mechanics_large_strain.h"
+#include "elastic_mechanics_large_strain.h"
 
 template <int dim>
 class Problem {
