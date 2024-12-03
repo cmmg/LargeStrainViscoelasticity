@@ -175,6 +175,7 @@ void Material<dim>::perform_constitutive_update() {
     SymmetricTensor<2, dim> b_bar = pow(J, -2.0/3.0) * symmetrize(F * transpose(F));
 
     kirchhoff_stress = K * J * log(J) * I + mu_0 * deviator(b_bar);
+    kirchhoff_stress = kirchhoff_stress / J;
 
     /*Tensor<2, dim> F_bar = pow(J, -2.0/3.0) * F;*/
     /**/
@@ -329,6 +330,6 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
 
-    spatial_tangent_modulus = Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
+    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
 
 }

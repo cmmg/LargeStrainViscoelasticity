@@ -255,11 +255,13 @@ void Problem<dim>::run () {
 template <int dim>
 void Problem<dim>::declare_parameters () {
 
-    parameter_handler.enter_subsection("Domain Geometry");
+    parameter_handler.enter_subsection("Domain Geometry and Mesh");
 
     parameter_handler.declare_entry("length", "1.0", Patterns::Double());
     parameter_handler.declare_entry("width", "1.0", Patterns::Double());
     parameter_handler.declare_entry("height", "1.0", Patterns::Double());
+
+    parameter_handler.declare_entry("global refinement level", "0", Patterns::Integer());
 
     parameter_handler.leave_subsection();
 
@@ -301,11 +303,13 @@ void Problem<dim>::setup_system () {
 
     std::cout << "-- Setting up\n" << std::endl;
 
-    parameter_handler.enter_subsection("Domain Geometry");
+    parameter_handler.enter_subsection("Domain Geometry and Mesh");
 
     double length = parameter_handler.get_double("length");
     double width  = parameter_handler.get_double("width");
     double height = parameter_handler.get_double("height");
+
+    int refinement_level = parameter_handler.get_integer("global refinement level");
 
     parameter_handler.leave_subsection();
 
@@ -314,7 +318,9 @@ void Problem<dim>::setup_system () {
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
-    /*triangulation.refine_global(2);*/
+    std::cout << "refinement_level = " << refinement_level << std::endl;
+
+    triangulation.refine_global(refinement_level);
 
     // Make space for all the history variables of the system
     quadrature_point_history.initialize(triangulation.begin_active(),
@@ -458,7 +464,7 @@ void Problem<dim>::generate_boundary_conditions () {
     /*pure_shear                                  = true;*/
     /*uniaxial_compression                        = true;*/
 
-    parameter_handler.enter_subsection("Domain Geometry");
+    parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
     parameter_handler.leave_subsection();
 

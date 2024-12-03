@@ -1,8 +1,9 @@
 {
-    "Domain Geometry" : {
+    "Domain Geometry and Mesh" : {
         "length" : 1.0,
         "width" : 1.0,
-        "height" : 1.0
+        "height" : 1.0,
+        "global refinement level" : 2
     }
     ,
     "Time Stepping and Iteration Control" : {
