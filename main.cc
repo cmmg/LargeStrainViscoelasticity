@@ -37,10 +37,8 @@ using namespace dealii;
 
 #include <iostream>
 
-/*#include "mechanics.h"*/
-/*#include "viscoelastic_mechanics.h"*/
-#include "viscoelastic_mechanics_small_strain.h"
-/*#include "st_venant_elasticity.h"*/
+/*#include "viscoelastic_mechanics_small_strain.h"*/
+#include "viscoelastic_mechanics_large_strain.h"
 
 template <int dim>
 class Problem {
@@ -286,7 +284,7 @@ void Problem<dim>::declare_parameters () {
     parameter_handler.declare_entry("mu0", "20.0", Patterns::Double());
     parameter_handler.declare_entry("lambdaL", "1.09", Patterns::Double());
     parameter_handler.declare_entry("sigma0", "25", Patterns::Double());
-    parameter_handler.declare_entry("n", "3", Patterns::Double());
+    parameter_handler.declare_entry("m", "3", Patterns::Double());
     parameter_handler.declare_entry("G0", "4500", Patterns::Double());
     parameter_handler.declare_entry("Ginfinity", "600", Patterns::Double());
     parameter_handler.declare_entry("eta", "60000", Patterns::Double());
@@ -316,7 +314,7 @@ void Problem<dim>::setup_system () {
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
-    triangulation.refine_global(2);
+    /*triangulation.refine_global(2);*/
 
     // Make space for all the history variables of the system
     quadrature_point_history.initialize(triangulation.begin_active(),
@@ -455,8 +453,8 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    constrained_shear_no_lateral_displacement   = true;
-    /*constrained_shear_with_lateral_displacement = true;*/
+    /*constrained_shear_no_lateral_displacement   = true;*/
+    constrained_shear_with_lateral_displacement = true;
     /*pure_shear                                  = true;*/
     /*uniaxial_compression                        = true;*/
 
@@ -909,7 +907,7 @@ void Problem<dim>::assemble_linear_system () {
         for (unsigned int q = 0; q < n_quadrature_points; ++q) {
 
             F = quadrature_point_history_data[q]->deformation_gradient;
-            s = quadrature_point_history_data[q]->cauchy_stress;
+            s = quadrature_point_history_data[q]->kirchhoff_stress;
             c = quadrature_point_history_data[q]->spatial_tangent_modulus;
             J = determinant(F);
 
@@ -1178,32 +1176,32 @@ void Problem<dim>::perform_L2_projections () {
 
                 sigma_xx_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->cauchy_stress[0][0] *
+                    quadrature_point_history_data[q]->kirchhoff_stress[0][0] *
                     fe_values_L2.JxW(q); 
 
                 sigma_xy_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->cauchy_stress[0][1] *
+                    quadrature_point_history_data[q]->kirchhoff_stress[0][1] *
                     fe_values_L2.JxW(q); 
 
                 sigma_xz_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->cauchy_stress[0][2] *
+                    quadrature_point_history_data[q]->kirchhoff_stress[0][2] *
                     fe_values_L2.JxW(q); 
 
                 sigma_yy_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->cauchy_stress[1][1] *
+                    quadrature_point_history_data[q]->kirchhoff_stress[1][1] *
                     fe_values_L2.JxW(q); 
 
                 sigma_yz_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->cauchy_stress[1][2] *
+                    quadrature_point_history_data[q]->kirchhoff_stress[1][2] *
                     fe_values_L2.JxW(q); 
 
                 sigma_zz_cell_rhs(i) +=
                     fe_values_L2.shape_value(i, q) * 
-                    quadrature_point_history_data[q]->cauchy_stress[2][2] *
+                    quadrature_point_history_data[q]->kirchhoff_stress[2][2] *
                     fe_values_L2.JxW(q); 
 
                 for (unsigned int j = 0; j < dofs_per_cell; ++j) {
