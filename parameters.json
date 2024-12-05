@@ -1,22 +1,22 @@
 {
     "Domain Geometry and Mesh" : {
-        "length" : 1.0,
-        "width" : 1.0,
-        "height" : 1.0,
+        "length" : 25.4,
+        "width" : 25.4,
+        "height" : 9.0,
         "global refinement level" : 2
     }
     ,
     "Time Stepping and Iteration Control" : {
-        "relative tolerance" : 1e-9,
+        "relative tolerance" : 1e-7,
         "time step length" : 1e-3,
-        "total simulation time" : 500e-3
+        "total simulation time" : 0.5
     }
     ,
     "Viscoelastic Material Parameters" : {
-        "K"   : 100.0,
-        "mu0" : 60.0,
-        "sigma0" : 10.0,
-        "gammadot0" : 0.0,
+        "K"   : 800.0,
+        "mu0" : 20.0,
+        "sigma0" : 25,
+        "gammadot0" : 1e-3,
         "m" : 3,
         "f1" : 0.8,
         "lambdaL" : 1.2,

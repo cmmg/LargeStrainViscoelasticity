@@ -215,8 +215,8 @@ void Problem<dim>::run () {
 
                 std::cout 
                 << "Iteration : " << iterations << " "
-                << "Total force norm : " << current_force_norm << " "
-                << "Relative force norm : " << current_force_norm / initial_force_norm
+                << "Relative force norm : " << current_force_norm / initial_force_norm << " "
+                << "Relative displacement norm : " << delta_solution.l2_norm() / solution.l2_norm() 
                 << std::endl;
 
                 if (iterations == max_no_of_NR_iterations) {
@@ -462,7 +462,7 @@ void Problem<dim>::generate_boundary_conditions () {
     /*constrained_shear_no_lateral_displacement   = true;*/
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    /*uniaxial_compression                        = true;*/
+    uniaxial_compression                        = true;
 
     parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
@@ -1383,14 +1383,6 @@ void Problem<dim>::output_results () {
     std::ofstream output_file(output_file_name);
 
     data_out.write_vtu(output_file);
-
-    // -------------------------------------------------------------------------
-
-    /*text_output_file */
-    /*    << solution[dof_handler.n_dofs() - 2] */
-    /*    << " "*/
-    /*    << nodal_output_L2[4][triangulation.n_vertices() - 1] */
-    /*    << std::endl;*/
 
     // -------------------------------------------------------------------------
 
