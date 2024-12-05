@@ -172,106 +172,98 @@ void Material<dim>::perform_constitutive_update() {
 
     double J = determinant(F);
 
-    SymmetricTensor<2, dim> b_bar = pow(J, -2.0/3.0) * symmetrize(F * transpose(F));
+    /*SymmetricTensor<2, dim> b_bar = pow(J, -2.0/3.0) * symmetrize(F * transpose(F));*/
+    /*cauchy_stress = K * log(J) * I + (mu_0/J) * deviator(b_bar);*/
 
-    cauchy_stress = K * log(J) * I + (mu_0/J) * deviator(b_bar);
+    Tensor<2, dim> F_bar = pow(J, -1.0/3.0) * F;
 
-    /*Tensor<2, dim> F_bar = pow(J, -2.0/3.0) * F;*/
-    /**/
-    /*// Use internal variable from previous time step to compute frozen viscous state*/
-    /*SymmetricTensor<2, dim> C_B_inv = invert(symmetrize(transpose(F_B) * F_B));*/
-    /**/
-    /*// Trial elastic strain state*/
-    /*SymmetricTensor<2, dim> b_A_bar_trial = symmetrize(F_bar * C_B_inv * transpose(F_bar));*/
-    /**/
-    /*// Trial elastic stress state*/
-    /*SymmetricTensor<2, dim> tau_d_trial = mu_0 * deviator(b_A_bar_trial);*/
-    /**/
-    /*if (tau_d_trial.norm() == 0) {*/
-    /**/
-    /*    tau_d = 0;*/
-    /**/
-    /*} else {*/
-    /*    // n_B_trial is the direction of the trial elastic state*/
-    /*    n_B_trial = tau_d_trial / tau_d_trial.norm();*/
-    /*    // tau_d_norm_trial is the magnitude of the trial elastic state*/
-    /*    double tau_d_norm_trial = tau_d_trial.norm();*/
-    /**/
-    /*    // x is the amount by which the norm of the trial deviatoric stress has to*/
-    /*    // be decreased to get the norm of the actual deviatoric stress state. It*/
-    /*    // is calculated in this implementation of viscoelasticity using Newton*/
-    /*    // Raphson iterations. The use of Newton-Raphson iterations in possible in*/
-    /*    // this case due to the use of a flow rule that allows a return mapping*/
-    /*    // algorithm.*/
-    /*    x = 0;*/
-    /**/
-    /*    double local_NR_function_initial    = NR_function(x, tau_d_norm_trial);*/
-    /*    double local_NR_function_derivative = NR_function_derivative(x, tau_d_norm_trial);*/
-    /*    double local_NR_function = local_NR_function_initial;*/
-    /**/
-    /*    unsigned int local_iterations = 0;*/
-    /*    unsigned int max_local_iterations = 10;*/
-    /**/
-    /*    while (fabs(local_NR_function / local_NR_function_initial) > 1e-9) {*/
-    /**/
-    /*        x -= local_NR_function / local_NR_function_derivative;*/
-    /**/
-    /*        // When this condition was added, x + tau_d_norm_trial was being*/
-    /*        // raised to a fractional power. Therefore, it is not correct to have*/
-    /*        // this sum be negative.*/
-    /*        while (x + tau_d_norm_trial < 0) {*/
-    /*            x *= 0.5;*/
-    /*        } */
-    /**/
-    /*        local_NR_function            = NR_function(x, tau_d_norm_trial);*/
-    /*        local_NR_function_derivative = NR_function_derivative(x, tau_d_norm_trial);*/
-    /**/
-    /*        local_iterations++;*/
-    /**/
-    /*        if (local_iterations == max_local_iterations) {*/
-    /*            std::cout*/
-    /*            << "Too many iterations for integrating the constitutive"*/
-    /*            << " equations. Exiting."*/
-    /*            << std::endl;*/
-    /**/
-    /*            exit(0);*/
-    /*        }*/
-    /*    }*/
-    /**/
-    /*    tau_d_norm = tau_d_norm_trial + x;*/
-    /**/
-    /*    tau_d = tau_d_norm * n_B_trial;*/
-    /**/
-    /*}*/
-    /**/
-    /*SymmetricTensor<2, dim> b_A_bar = tau_d / mu_0 + (1.0/3.0) * trace(b_A_bar_trial) * I;*/
-    /**/
-    /*b_A_bar = pow(determinant(b_A_bar), -2.0/3.0) * b_A_bar;*/
-    /**/
-    /*kirchhoff_stress = K * log(J) * I + mu_0 * deviator(b_A_bar) / J;*/
-    /**/
-    /*SymmetricTensor<2, dim> b_A = pow(J, 2.0/3.0) * b_A_bar;*/
-    /**/
-    /*SymmetricTensor<2, dim> V_A = tensor_square_root(b_A);*/
-    /**/
-    /*F_A = V_A;*/
-    /**/
-    /*F_B = invert(F_A) * F;*/
-    /**/
-    /*if (integration_point_index == 1) {*/
-    /*    *text_output_file */
-    /*    << kirchhoff_stress[2][2] << " "*/
-    /*    << F_B.norm() << " "*/
-    /*    << x << " "*/
-    /*    << std::endl;*/
-    /*}*/
+    // Use internal variable from previous time step to compute frozen viscous state
+    SymmetricTensor<2, dim> C_B_inv = invert(symmetrize(transpose(F_B) * F_B));
+
+    // Trial elastic strain state
+    SymmetricTensor<2, dim> b_A_bar_trial = symmetrize(F_bar * C_B_inv * transpose(F_bar));
+
+    // Trial elastic stress state
+    SymmetricTensor<2, dim> tau_d_trial = mu_0 * deviator(b_A_bar_trial);
+
+    if (tau_d_trial.norm() == 0) {
+
+        tau_d = 0.0;
+        tau_d_norm = 0.0;
+
+    } else {
+        // n_B_trial is the direction of the trial elastic state
+        n_B_trial = tau_d_trial / tau_d_trial.norm();
+        // tau_d_norm_trial is the magnitude of the trial elastic state
+        double tau_d_norm_trial = tau_d_trial.norm();
+
+        // x is the amount by which the norm of the trial deviatoric stress has to
+        // be decreased to get the norm of the actual deviatoric stress state. It
+        // is calculated in this implementation of viscoelasticity using Newton
+        // Raphson iterations. The use of Newton-Raphson iterations in possible in
+        // this case due to the use of a flow rule that allows a return mapping
+        // algorithm.
+        x = 0;
+
+        double local_NR_function_initial    = NR_function(x, tau_d_norm_trial);
+        double local_NR_function_derivative = NR_function_derivative(x, tau_d_norm_trial);
+        double local_NR_function = local_NR_function_initial;
+
+        unsigned int local_iterations = 0;
+        unsigned int max_local_iterations = 10;
+
+        while (fabs(local_NR_function / local_NR_function_initial) > 1e-9) {
+
+            x -= local_NR_function / local_NR_function_derivative;
+
+            // When this condition was added, x + tau_d_norm_trial was being
+            // raised to a fractional power. Therefore, it is not correct to have
+            // this sum be negative.
+            while (x + tau_d_norm_trial < 0) {
+                x *= 0.5;
+            } 
+
+            local_NR_function            = NR_function(x, tau_d_norm_trial);
+            local_NR_function_derivative = NR_function_derivative(x, tau_d_norm_trial);
+
+            local_iterations++;
+
+            if (local_iterations == max_local_iterations) {
+                std::cout
+                << "Too many iterations for integrating the constitutive"
+                << " equations. Exiting."
+                << std::endl;
+
+                exit(0);
+            }
+        }
+
+        tau_d_norm = tau_d_norm_trial + x;
+
+        tau_d = tau_d_norm * n_B_trial;
+
+    }
+
+    SymmetricTensor<2, dim> b_A_bar = tau_d / mu_0 + (1.0/3.0) * trace(b_A_bar_trial) * I;
+
+    b_A_bar = pow(determinant(b_A_bar), -2.0/3.0) * b_A_bar;
+
+    cauchy_stress = K * log(J) * I + tau_d / J;
+
+    SymmetricTensor<2, dim> b_A = pow(J, 2.0/3.0) * b_A_bar;
+
+    SymmetricTensor<2, dim> V_A = tensor_square_root(b_A);
+
+    F_A = V_A;
+
+    F_B = invert(F_A) * F;
 
 }
 
 template <int dim>
 void Material<dim>::compute_spatial_tangent_modulus() {
     
-    SymmetricTensor<2, dim> I = Physics::Elasticity::StandardTensors<dim>::I;
+    SymmetricTensor<4, dim> S = Physics::Elasticity::StandardTensors<dim>::S;
     
     Tensor<2, dim> F = deformation_gradient;
 
@@ -288,42 +280,44 @@ void Material<dim>::compute_spatial_tangent_modulus() {
     SymmetricTensor<4, dim> dS_h_dC = f_h * dC_inv_dC
                                     + df_h_dJ * outer_product(C_inv, C_inv);
 
-    // Start computing deviatoric tangent modulus
-    SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv)
-                                    + outer_product(C_inv, I)
-                                    - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)
-                                    + trace(C) * dC_inv_dC;
+    /*// Start computing deviatoric tangent modulus*/
 
-    dS_d_dC *= - mu_0 * pow(J, -2.0/3.0) / 3.0;
+    SymmetricTensor<4, dim> dS_d_dC;
 
-    /*// Auxiliary tensors for calculating the deviatoric tangent modulus*/
-    /*SymmetricTensor<2, dim> C_B_inv = invert(symmetrize(transpose(F_B) * F_B));*/
-    /*SymmetricTensor<4, dim> X_1, Y_1, X_2, Y_2;*/
-    /**/
-    /*X_1 = outer_product(C_B_inv, C_inv) */
-    /*    - (1.0/3.0) * (C_B_inv * C_inv) * outer_product(C_inv, C_inv)*/
-    /*    + (C_B_inv * C_inv) * dC_inv_dC*/
-    /*    + outer_product(C_B_inv, C_inv); */
-    /**/
-    /*X_1 *= -(1.0/3.0) * mu_0 * pow(J, -2.0/3.0);*/
-    /**/
-    /*Y_1 = mu_0 * Physics::Elasticity::StandardTensors<dim>::Dev_P(F);	*/
-    /**/
-    /*double f_d = - gamma_dot_0 * delta_t * pow(tau_d_norm, m - 3.0) * pow(sigma_0, -m);*/
-    /**/
-    /*SymmetricTensor<2, dim> Sd = Physics::Transformations::Contravariant::pull_back(tau_d, F);	*/
-    /**/
-    /*Tensor<2, dim> C_Sd = multiply_symmetric_tensors(C, Sd);*/
-    /*SymmetricTensor<2, dim> Sd_C_Sd = symmetrize(Sd * C_Sd);*/
-    /**/
-    /*Tensor<2, dim> Sd_C = multiply_symmetric_tensors(Sd, C);*/
-    /*SymmetricTensor<2, dim> C_Sd_C = symmetrize(C * Sd_C);*/
-    /**/
-    /*X_2 = f_d * (m - 1.0) * outer_product(Sd, Sd_C_Sd);*/
-    /**/
-    /*Y_2 = f_d * ((m - 1.0) * outer_product(Sd, C_Sd_C) + pow(tau_d_norm, 2.0) * S);*/
-    /**/
-    /*dS_d_dC = invert(S - Y_1 * Y_2) * (X_1 + Y_1 * X_2);*/
+    /*dS_d_dC = outer_product(I, C_inv)*/
+    /*        + outer_product(C_inv, I)*/
+    /*        - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)*/
+    /*        + trace(C) * dC_inv_dC;*/
+    /*dS_d_dC *= - mu_0 * pow(J, -2.0/3.0) / 3.0;*/
+
+    // Auxiliary tensors for calculating the deviatoric tangent modulus
+    SymmetricTensor<2, dim> C_B_inv = invert(symmetrize(transpose(F_B) * F_B));
+    SymmetricTensor<4, dim> X_1, Y_1, X_2, Y_2;
+
+    X_1 = outer_product(C_B_inv, C_inv) 
+        - (1.0/3.0) * (C_B_inv * C) * outer_product(C_inv, C_inv)
+        + (C_B_inv * C) * dC_inv_dC
+        + outer_product(C_inv, C_B_inv); 
+
+    X_1 *= -(1.0/3.0) * mu_0 * pow(J, -2.0/3.0);
+
+    Y_1 = mu_0 * Physics::Elasticity::StandardTensors<dim>::Dev_P(F);	
+
+    double f_d = - gamma_dot_0 * delta_t * pow(tau_d_norm, m - 3.0) * pow(sigma_0, -m);
+
+    SymmetricTensor<2, dim> Sd = Physics::Transformations::Contravariant::pull_back(tau_d, F);	
+
+    Tensor<2, dim> C_Sd = multiply_symmetric_tensors(C, Sd);
+    SymmetricTensor<2, dim> Sd_C_Sd = symmetrize(Sd * C_Sd);
+
+    Tensor<2, dim> Sd_C = multiply_symmetric_tensors(Sd, C);
+    SymmetricTensor<2, dim> C_Sd_C = symmetrize(C * Sd_C);
+
+    X_2 = f_d * (m - 1.0) * outer_product(Sd, Sd_C_Sd);
+
+    Y_2 = f_d * ((m - 1.0) * outer_product(Sd, C_Sd_C) + pow(tau_d_norm, 2.0) * S);
+
+    dS_d_dC = invert(S - Y_1 * Y_2) * (X_1 + Y_1 * X_2);
 
     // End computing deviatoric tangent modulus
 

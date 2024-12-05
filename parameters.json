@@ -9,7 +9,7 @@
     "Time Stepping and Iteration Control" : {
         "relative tolerance" : 1e-9,
         "time step length" : 1e-3,
-        "total simulation time" : 0.5
+        "total simulation time" : 500e-3
     }
     ,
     "Viscoelastic Material Parameters" : {

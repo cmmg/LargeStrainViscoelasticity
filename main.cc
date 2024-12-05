@@ -37,7 +37,8 @@ using namespace dealii;
 
 #include <iostream>
 
-#include "elastic_mechanics_large_strain.h"
+/*#include "elastic_mechanics_large_strain.h"*/
+#include "viscoelastic_mechanics_large_strain.h"
 
 template <int dim>
 class Problem {
@@ -459,7 +460,7 @@ void Problem<dim>::generate_boundary_conditions () {
     bool uniaxial_compression                        = false;
 
     /*constrained_shear_no_lateral_displacement   = true;*/
-    constrained_shear_with_lateral_displacement = true;
+    /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
     /*uniaxial_compression                        = true;*/
 

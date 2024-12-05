@@ -176,95 +176,13 @@ void Material<dim>::perform_constitutive_update() {
 
     cauchy_stress = K * log(J) * I + (mu_0/J) * deviator(b_bar);
 
-    /*Tensor<2, dim> F_bar = pow(J, -2.0/3.0) * F;*/
-    /**/
-    /*// Use internal variable from previous time step to compute frozen viscous state*/
-    /*SymmetricTensor<2, dim> C_B_inv = invert(symmetrize(transpose(F_B) * F_B));*/
-    /**/
-    /*// Trial elastic strain state*/
-    /*SymmetricTensor<2, dim> b_A_bar_trial = symmetrize(F_bar * C_B_inv * transpose(F_bar));*/
-    /**/
-    /*// Trial elastic stress state*/
-    /*SymmetricTensor<2, dim> tau_d_trial = mu_0 * deviator(b_A_bar_trial);*/
-    /**/
-    /*if (tau_d_trial.norm() == 0) {*/
-    /**/
-    /*    tau_d = 0;*/
-    /**/
-    /*} else {*/
-    /*    // n_B_trial is the direction of the trial elastic state*/
-    /*    n_B_trial = tau_d_trial / tau_d_trial.norm();*/
-    /*    // tau_d_norm_trial is the magnitude of the trial elastic state*/
-    /*    double tau_d_norm_trial = tau_d_trial.norm();*/
-    /**/
-    /*    // x is the amount by which the norm of the trial deviatoric stress has to*/
-    /*    // be decreased to get the norm of the actual deviatoric stress state. It*/
-    /*    // is calculated in this implementation of viscoelasticity using Newton*/
-    /*    // Raphson iterations. The use of Newton-Raphson iterations in possible in*/
-    /*    // this case due to the use of a flow rule that allows a return mapping*/
-    /*    // algorithm.*/
-    /*    x = 0;*/
-    /**/
-    /*    double local_NR_function_initial    = NR_function(x, tau_d_norm_trial);*/
-    /*    double local_NR_function_derivative = NR_function_derivative(x, tau_d_norm_trial);*/
-    /*    double local_NR_function = local_NR_function_initial;*/
-    /**/
-    /*    unsigned int local_iterations = 0;*/
-    /*    unsigned int max_local_iterations = 10;*/
-    /**/
-    /*    while (fabs(local_NR_function / local_NR_function_initial) > 1e-9) {*/
-    /**/
-    /*        x -= local_NR_function / local_NR_function_derivative;*/
-    /**/
-    /*        // When this condition was added, x + tau_d_norm_trial was being*/
-    /*        // raised to a fractional power. Therefore, it is not correct to have*/
-    /*        // this sum be negative.*/
-    /*        while (x + tau_d_norm_trial < 0) {*/
-    /*            x *= 0.5;*/
-    /*        } */
-    /**/
-    /*        local_NR_function            = NR_function(x, tau_d_norm_trial);*/
-    /*        local_NR_function_derivative = NR_function_derivative(x, tau_d_norm_trial);*/
-    /**/
-    /*        local_iterations++;*/
-    /**/
-    /*        if (local_iterations == max_local_iterations) {*/
-    /*            std::cout*/
-    /*            << "Too many iterations for integrating the constitutive"*/
-    /*            << " equations. Exiting."*/
-    /*            << std::endl;*/
-    /**/
-    /*            exit(0);*/
-    /*        }*/
-    /*    }*/
-    /**/
-    /*    tau_d_norm = tau_d_norm_trial + x;*/
-    /**/
-    /*    tau_d = tau_d_norm * n_B_trial;*/
-    /**/
-    /*}*/
-    /**/
-    /*SymmetricTensor<2, dim> b_A_bar = tau_d / mu_0 + (1.0/3.0) * trace(b_A_bar_trial) * I;*/
-    /**/
-    /*b_A_bar = pow(determinant(b_A_bar), -2.0/3.0) * b_A_bar;*/
-    /**/
-    /*kirchhoff_stress = K * log(J) * I + mu_0 * deviator(b_A_bar) / J;*/
-    /**/
-    /*SymmetricTensor<2, dim> b_A = pow(J, 2.0/3.0) * b_A_bar;*/
-    /**/
-    /*SymmetricTensor<2, dim> V_A = tensor_square_root(b_A);*/
-    /**/
-    /*F_A = V_A;*/
-    /**/
-    /*F_B = invert(F_A) * F;*/
-    /**/
-    /*if (integration_point_index == 1) {*/
-    /*    *text_output_file */
-    /*    << kirchhoff_stress[2][2] << " "*/
-    /*    << F_B.norm() << " "*/
-    /*    << x << " "*/
-    /*    << std::endl;*/
-    /*}*/
+    if (cell_index == 1 && integration_point_index == 1) {
+        *text_output_file 
+        << cauchy_stress[2][2] << "|"
+        /*<< F_B.norm() << "|"*/
+        /*<< x << " "*/
+        << std::endl;
+    }
 
 }
 
