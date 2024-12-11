@@ -93,6 +93,7 @@ class Problem {
 
         // Linear algebra objects for solving the problem
         Vector<double> system_rhs;
+        Vector<double> system_reaction_forces;
         Vector<double> solution;
         Vector<double> delta_solution;
         Vector<double> residual;
@@ -108,7 +109,8 @@ class Problem {
         // Output
         DataOut<dim> data_out;
         std::ofstream text_output_file;
-
+        std::vector<int> z_boundary_dofs;
+        std::ofstream force_displacement_file;
 };
 
 template <int dim>
@@ -132,7 +134,8 @@ Problem<dim>::Problem () :
             update_JxW_values),
     max_no_of_NR_iterations(10),
     parameters_file("parameters.json"),
-    text_output_file("text_output_file.txt")
+    text_output_file("text_output_file.txt"),
+    force_displacement_file("force_displacement_file.txt")
     {}
 
 template <int dim>
@@ -231,9 +234,7 @@ void Problem<dim>::run () {
                 ) {
 
                     std::cout 
-                        << "Step converged in " 
-                        << iterations 
-                        << " iteration(s)." 
+                        << "Step converged in " << iterations << " iteration(s)." 
                         << std::endl;
 
                     break;
@@ -318,8 +319,6 @@ void Problem<dim>::setup_system () {
                                    Point<dim>(0, 0, 0),
                                    Point<dim>(length, width, height));
 
-    std::cout << "refinement_level = " << refinement_level << std::endl;
-
     triangulation.refine_global(refinement_level);
 
     // Make space for all the history variables of the system
@@ -385,11 +384,31 @@ void Problem<dim>::setup_system () {
 
     dof_handler.distribute_dofs(fe);
 
+    // At the time of writing, this code was for the uniaxial compression of a
+    // cuboidal domain along the z direction. The vector
+    // z_reaction_force_dofs_selector is used to get all the dofs on the
+    // loading surface which are also along the loading direction. The
+    // direction is set using a component mask and the position is set by a
+    // boundary id for the boundary on which the node exists.
+    const FEValuesExtractors::Scalar z_component(2);
+    const std::set<types::boundary_id> z_boundary_ids = {5};
+    std::vector<bool> z_reaction_force_dofs_selector;
+    DoFTools::extract_boundary_dofs(
+                dof_handler,
+                fe.component_mask(z_component),
+                z_reaction_force_dofs_selector,
+                z_boundary_ids);
+
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); ++i)
+        if (z_reaction_force_dofs_selector[i] == true)
+            z_boundary_dofs.push_back(i);
+
     // Set the sizes of the linear algebra objects
     residual.reinit(dof_handler.n_dofs());
     delta_solution.reinit(dof_handler.n_dofs());
     solution.reinit(dof_handler.n_dofs());
     system_rhs.reinit(dof_handler.n_dofs());
+    system_reaction_forces.reinit(dof_handler.n_dofs());
 
     // Make space in memory for the system matrix
     DynamicSparsityPattern dsp(dof_handler.n_dofs());
@@ -459,10 +478,10 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    /*constrained_shear_no_lateral_displacement   = true;*/
+    constrained_shear_no_lateral_displacement   = true;
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    uniaxial_compression                        = true;
+    /*uniaxial_compression                        = true;*/
 
     parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
@@ -533,12 +552,30 @@ void Problem<dim>::generate_boundary_conditions () {
                                 non_homogenous_constraints,
                                 fe.component_mask(x_component));
 
-        VectorTools::interpolate_boundary_values(
-                    dof_handler,
-                    5,
-                    Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
-                    non_homogenous_constraints,
-                    fe.component_mask(y_component));
+        // The face opposite the xy plane has boundary indicator of 5. This is
+        // where the velocity boundary condition must be applied.
+        if (current_time <= 0.5
+            or
+            (current_time > 1.0 and current_time <= 1.5)
+            or
+            (current_time > 2.0 and current_time <= 2.5)
+            or
+            (current_time > 3.0 and current_time <= 3.5)
+        ) {
+            VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            5,
+                            Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
+                            non_homogenous_constraints,
+                            fe.component_mask(y_component));
+        } else {
+            VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            5,
+                            Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
+                            non_homogenous_constraints,
+                            fe.component_mask(y_component));
+        }
 
         VectorTools::interpolate_boundary_values(
                                 dof_handler,
@@ -805,12 +842,28 @@ void Problem<dim>::generate_boundary_conditions () {
 
         // The face opposite the xy plane has boundary indicator of 5. This is
         // where the velocity boundary condition must be applied.
-        VectorTools::interpolate_boundary_values(
-                        dof_handler,
-                        5,
-                        Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
-                        non_homogenous_constraints,
-                        fe.component_mask(z_component));
+        if (current_time <= 0.5
+            or
+            (current_time > 1.0 and current_time <= 1.5)
+            or
+            (current_time > 2.0 and current_time <= 2.5)
+            or
+            (current_time > 3.0 and current_time <= 3.5)
+        ) {
+            VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            5,
+                            Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
+                            non_homogenous_constraints,
+                            fe.component_mask(z_component));
+        } else {
+            VectorTools::interpolate_boundary_values(
+                            dof_handler,
+                            5,
+                            Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
+                            non_homogenous_constraints,
+                            fe.component_mask(z_component));
+        }
 
         non_homogenous_constraints.close();
 
@@ -887,7 +940,7 @@ void Problem<dim>::assemble_linear_system () {
 
     double J; // Determinant(F)
 
-    SymmetricTensor<2, dim> s; // Kirchhoff stress
+    SymmetricTensor<2, dim> s; // Cauchy stress
     SymmetricTensor<4, dim> c; // Spatial tangent modulus * determinant(F)
 
     SymmetricTensor<2, dim> delta = Physics::Elasticity::StandardTensors<dim>::I;
@@ -1382,10 +1435,77 @@ void Problem<dim>::output_results () {
 
     std::ofstream output_file(output_file_name);
 
-    data_out.write_vtu(output_file);
+    /*data_out.write_vtu(output_file);*/
 
     // -------------------------------------------------------------------------
+    
+    // The global vector of nodal reaction forces is assembled and used to
+    // extract the total reaction force from the loading surface of the domain.
 
+    // Set of variables needed to calculate the reaction forces
+    system_reaction_forces = 0.0;
+    const unsigned int dofs_per_cell       = fe.n_dofs_per_cell();
+    const unsigned int n_quadrature_points = fe_values.n_quadrature_points;
+    Vector<double>     cell_reaction_forces(dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices(dofs_per_cell);
+    std::vector<std::shared_ptr<Material<dim>>> quadrature_point_history_data;
+    SymmetricTensor<2, dim> s; // Cauchy stress
+    Tensor<2, dim> F;    // Deformation gradient
+    Tensor<2, dim> Finv; // Inverse of the deformation gradient
+    double J; // Determinant(F)
+    Tensor<1, dim> dphidx_i;
+
+    for (const auto &cell : dof_handler.active_cell_iterators()) {
+        fe_values.reinit(cell);
+        cell_reaction_forces = 0.0;
+        quadrature_point_history_data = quadrature_point_history.get_data(cell);
+        for (unsigned int q = 0; q < n_quadrature_points; ++q) {
+            F = quadrature_point_history_data[q]->deformation_gradient;
+            s = quadrature_point_history_data[q]->cauchy_stress;
+            J = determinant(F);
+
+            Finv = invert(F);
+
+            for (unsigned int i = 0; i < dofs_per_cell; ++i) {
+
+                const unsigned int ci = fe_values
+                                        .get_fe()
+                                        .system_to_component_index(i)
+                                        .first;
+
+                dphidx_i = 0.0; 
+
+                for (unsigned int m = 0; m < dim; ++m)
+                    for (unsigned int n = 0; n < dim; ++n)
+                        dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
+
+                for (unsigned int di = 0; di < dim; ++di)
+                    cell_reaction_forces(i) += -dphidx_i[di] * s[ci][di] * J * fe_values.JxW(q);
+            } // End of loop over all cell DOFs
+        } // End of loop over all quadrature points
+
+        cell->get_dof_indices(local_dof_indices);
+
+        constraints_L2.distribute_local_to_global(
+                                cell_reaction_forces,
+                                local_dof_indices,
+                                system_reaction_forces);
+
+    } // End of loop over all cells
+
+    double displacement, total_reaction_force;
+
+    total_reaction_force = 0.0;
+    for (auto boundary_dof : z_boundary_dofs)
+        total_reaction_force += system_reaction_forces[boundary_dof];
+
+    displacement = -solution[z_boundary_dofs[0]];
+
+    /*force_displacement_file << displacement << " " << total_reaction_force << "\n"; */
+    force_displacement_file << solution[22] << " " << nodal_output_L2[4][0] << "\n"; 
+
+    // -------------------------------------------------------------------------
+    
     std::cout << "\nResults written" << std::endl;
 }
 
