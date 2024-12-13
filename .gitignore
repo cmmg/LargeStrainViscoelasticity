@@ -4,6 +4,7 @@ Makefile
 cmake_install.cmake
 main
 *.vtu
+*.png
 tags
 solution/
 text_output_file*

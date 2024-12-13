@@ -34,7 +34,7 @@ class Material {
         double mu_0; // Shear modulus
         double gamma_dot_0; // Reference viscous stretching rate
         double sigma_0; // Resistance to viscous stretching
-        double n; // Viscous flow rule exponent
+        double m; // Viscous flow rule exponent
 
         // Internal variable
         SymmetricTensor<4, dim> C_el; // Elastic tangent modulus
@@ -65,7 +65,7 @@ void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler
 
     gamma_dot_0 = parameter_handler.get_double("gammadot0");
     sigma_0     = parameter_handler.get_double("sigma0");
-    n           = parameter_handler.get_double("n");
+    m           = parameter_handler.get_double("m");
 
 }
 
@@ -92,8 +92,8 @@ double Material<dim>::NR_function(double x, double sigma_d_norm_trial) {
 
     tmp = x
         + (2.0 * mu_0 * gamma_dot_0 * delta_t)
-        * pow(sigma_d_norm_trial + x, n)
-        * pow(sigma_0, -n);
+        * pow(sigma_d_norm_trial + x, m)
+        * pow(sigma_0, -m);
 
     return tmp;
 
@@ -105,9 +105,9 @@ double Material<dim>::NR_function_derivative(double x, double sigma_d_norm_trial
     double tmp;
 
     tmp = 1.0
-        + (2.0 * mu_0 * n * gamma_dot_0 * delta_t)
-        * pow(sigma_d_norm_trial + x, n - 1.0)
-        * pow(sigma_0, -n);
+        + (2.0 * mu_0 * m * gamma_dot_0 * delta_t)
+        * pow(sigma_d_norm_trial + x, m - 1.0)
+        * pow(sigma_0, -m);
 
     return tmp;
 }
@@ -188,13 +188,13 @@ void Material<dim>::perform_constitutive_update() {
 
     epsilon_B = epsilon - epsilon_A;
 
-    if (cell_index == 64 and integration_point_index == 8) {
-        *text_output_file
-        << "epsilon = " << epsilon << "\n"
-        << "epsilon_A = " << epsilon_A << "\n"
-        << "epsilon_B = " << epsilon_B << "\n"
-        << std::endl;
-    }
+    /*if (cell_index == 64 and integration_point_index == 8) {*/
+    /*    *text_output_file*/
+    /*    << "epsilon = " << epsilon << "\n"*/
+    /*    << "epsilon_A = " << epsilon_A << "\n"*/
+    /*    << "epsilon_B = " << epsilon_B << "\n"*/
+    /*    << std::endl;*/
+    /*}*/
 
 }
 
@@ -206,13 +206,17 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
         SymmetricTensor<4, dim> S   = Physics::Elasticity::StandardTensors<dim>::S;
         SymmetricTensor<4, dim> IxI = Physics::Elasticity::StandardTensors<dim>::IxI;
-        SymmetricTensor<4, dim> P   = S - (1.0/3.0) * IxI;
+        SymmetricTensor<4, dim> X   = 2 * mu_0 * (S - (1.0/3.0) * IxI);
 
-        SymmetricTensor<4, dim> L_0 = (n - 1.0) * outer_product(N_B_trial, N_B_trial) + S;
-        SymmetricTensor<4, dim> L_1 = pow(sigma_d_norm / sigma_0, n) * gamma_dot_0 * delta_t * L_0;
-        SymmetricTensor<4, dim> L_2 = L_1 / sigma_d_norm;
+        SymmetricTensor<4, dim> Y = 2 * mu_0 * gamma_dot_0 * delta_t
+                                  * pow(sigma_d_norm, m-1.0) * pow(sigma_0, -m)
+                                  * ((m-1.0) * outer_product(N_B_trial, N_B_trial) + S);
 
-        spatial_tangent_modulus = invert(S + C_el * L_2 * P) * C_el;
+        SymmetricTensor<4, dim> deviatoric_modulus = invert(S + Y) * X;
+
+        SymmetricTensor<4, dim> spherical_modulus = K * IxI;
+
+        spatial_tangent_modulus = spherical_modulus + deviatoric_modulus;
 
     } else {
 

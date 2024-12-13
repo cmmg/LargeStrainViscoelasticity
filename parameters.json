@@ -3,20 +3,20 @@
         "length" : 25.4,
         "width" : 25.4,
         "height" : 9.0,
-        "global refinement level" : 0
+        "global refinement level" : 2
     }
     ,
     "Time Stepping and Iteration Control" : {
         "relative tolerance" : 1e-7,
         "time step length" : 1e-3,
-        "total simulation time" : 2.0
+        "total simulation time" : 0.5
     }
     ,
-    "Viscoelastic Material Parameters" : {
-        "K"   : 800.0,
-        "mu0" : 50.0,
-        "sigma0" : 5,
-        "gammadot0" : 0.0,
+    "Material Parameters" : {
+        "K" : 800.0,
+        "mu0" : 500.0,
+        "sigma0" : 100.0,
+        "gammadot0" : 1e-3,
         "m" : 3,
         "f1" : 0.8,
         "lambdaL" : 1.2,

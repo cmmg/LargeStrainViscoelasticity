@@ -39,6 +39,7 @@ using namespace dealii;
 
 /*#include "elastic_mechanics_large_strain.h"*/
 #include "viscoelastic_mechanics_large_strain.h"
+/*#include "viscoelastic_mechanics_small_strain.h"*/
 
 template <int dim>
 class Problem {
@@ -109,6 +110,7 @@ class Problem {
         // Output
         DataOut<dim> data_out;
         std::ofstream text_output_file;
+        std::vector<int> y_boundary_dofs;
         std::vector<int> z_boundary_dofs;
         std::ofstream force_displacement_file;
 };
@@ -280,7 +282,7 @@ void Problem<dim>::declare_parameters () {
 
     parameter_handler.leave_subsection();
 
-    parameter_handler.enter_subsection("Viscoelastic Material Parameters");
+    parameter_handler.enter_subsection("Material Parameters");
 
     parameter_handler.declare_entry("K", "800.0", Patterns::Double());
     parameter_handler.declare_entry("f1", "0.0", Patterns::Double());
@@ -367,7 +369,7 @@ void Problem<dim>::setup_system () {
 
         quadrature_point_history_data = quadrature_point_history.get_data(cell);
 
-        parameter_handler.enter_subsection("Viscoelastic Material Parameters");
+        parameter_handler.enter_subsection("Material Parameters");
 
         // Quadrature loop for current cell
         for (unsigned int q = 0; q < fe_values.n_quadrature_points; ++q) {
@@ -384,24 +386,39 @@ void Problem<dim>::setup_system () {
 
     dof_handler.distribute_dofs(fe);
 
-    // At the time of writing, this code was for the uniaxial compression of a
-    // cuboidal domain along the z direction. The vector
-    // z_reaction_force_dofs_selector is used to get all the dofs on the
-    // loading surface which are also along the loading direction. The
-    // direction is set using a component mask and the position is set by a
-    // boundary id for the boundary on which the node exists.
+
+    // This was for a cuboidal domain loaded on the positive z face. The vector
+    // z_dofs_selector is used to get all the dofs on the loading surface which
+    // are also along the z direction. The direction is set using a component
+    // mask and the position is set by a boundary id for the boundary on which
+    // the node exists.
+
+    const std::set<types::boundary_id> boundary_ids = {5};
+
+    const FEValuesExtractors::Scalar y_component(1);
     const FEValuesExtractors::Scalar z_component(2);
-    const std::set<types::boundary_id> z_boundary_ids = {5};
-    std::vector<bool> z_reaction_force_dofs_selector;
+
+    std::vector<bool> y_dofs_selector;
+    std::vector<bool> z_dofs_selector;
+
+    DoFTools::extract_boundary_dofs(
+                dof_handler,
+                fe.component_mask(y_component),
+                y_dofs_selector,
+                boundary_ids);
+
     DoFTools::extract_boundary_dofs(
                 dof_handler,
                 fe.component_mask(z_component),
-                z_reaction_force_dofs_selector,
-                z_boundary_ids);
+                z_dofs_selector,
+                boundary_ids);
 
-    for (unsigned int i = 0; i < dof_handler.n_dofs(); ++i)
-        if (z_reaction_force_dofs_selector[i] == true)
-            z_boundary_dofs.push_back(i);
+    for (unsigned int i = 0; i < dof_handler.n_dofs(); ++i) {
+
+        if (z_dofs_selector[i] == true) z_boundary_dofs.push_back(i);
+
+        if (y_dofs_selector[i] == true) y_boundary_dofs.push_back(i);
+    }
 
     // Set the sizes of the linear algebra objects
     residual.reinit(dof_handler.n_dofs());
@@ -478,10 +495,10 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    constrained_shear_no_lateral_displacement   = true;
+    /*constrained_shear_no_lateral_displacement   = true;*/
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    /*uniaxial_compression                        = true;*/
+    uniaxial_compression                        = true;
 
     parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
@@ -853,7 +870,7 @@ void Problem<dim>::generate_boundary_conditions () {
             VectorTools::interpolate_boundary_values(
                             dof_handler,
                             5,
-                            Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
+                            Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
                             non_homogenous_constraints,
                             fe.component_mask(z_component));
         } else {
@@ -1480,7 +1497,7 @@ void Problem<dim>::output_results () {
                         dphidx_i[m] += fe_values.shape_grad(i, q)[n] * Finv[n][m];
 
                 for (unsigned int di = 0; di < dim; ++di)
-                    cell_reaction_forces(i) += -dphidx_i[di] * s[ci][di] * J * fe_values.JxW(q);
+                    cell_reaction_forces(i) += dphidx_i[di] * s[ci][di] * J * fe_values.JxW(q);
             } // End of loop over all cell DOFs
         } // End of loop over all quadrature points
 
@@ -1496,13 +1513,13 @@ void Problem<dim>::output_results () {
     double displacement, total_reaction_force;
 
     total_reaction_force = 0.0;
-    for (auto boundary_dof : z_boundary_dofs)
+    for (auto boundary_dof : z_boundary_dofs) {
         total_reaction_force += system_reaction_forces[boundary_dof];
+    }
 
-    displacement = -solution[z_boundary_dofs[0]];
+    displacement = solution[z_boundary_dofs[0]];
 
-    /*force_displacement_file << displacement << " " << total_reaction_force << "\n"; */
-    force_displacement_file << solution[22] << " " << nodal_output_L2[4][0] << "\n"; 
+    force_displacement_file << displacement << " " << total_reaction_force << std::endl;
 
     // -------------------------------------------------------------------------
     
