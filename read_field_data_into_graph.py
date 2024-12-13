@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib
-matplotlib.use('Agg') # Non-interactive backend for use over SSH
+matplotlib.use('Agg') # Non-interactive backend of matplotlib for use over SSH
 import matplotlib.pyplot as plt
 
 # This program assumes that the output from dealii is in vtk, vtu etc format
