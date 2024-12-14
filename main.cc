@@ -38,7 +38,8 @@ using namespace dealii;
 #include <iostream>
 
 /*#include "elastic_mechanics_large_strain.h"*/
-#include "viscoelastic_mechanics_large_strain.h"
+/*#include "viscoelastic_mechanics_large_strain.h"*/
+#include "elasto_plastic_mechanics_large_strain.h"
 /*#include "viscoelastic_mechanics_small_strain.h"*/
 
 template <int dim>
@@ -284,17 +285,10 @@ void Problem<dim>::declare_parameters () {
 
     parameter_handler.enter_subsection("Material Parameters");
 
-    parameter_handler.declare_entry("K", "800.0", Patterns::Double());
-    parameter_handler.declare_entry("f1", "0.0", Patterns::Double());
-    parameter_handler.declare_entry("mu0", "20.0", Patterns::Double());
-    parameter_handler.declare_entry("lambdaL", "1.09", Patterns::Double());
-    parameter_handler.declare_entry("sigma0", "25", Patterns::Double());
-    parameter_handler.declare_entry("m", "3", Patterns::Double());
-    parameter_handler.declare_entry("G0", "4500", Patterns::Double());
-    parameter_handler.declare_entry("Ginfinity", "600", Patterns::Double());
-    parameter_handler.declare_entry("eta", "60000", Patterns::Double());
-    parameter_handler.declare_entry("gammadot0", "1e-4", Patterns::Double());
-    parameter_handler.declare_entry("alpha", "0.005", Patterns::Double());
+    parameter_handler.declare_entry("Shear Modulus", "384.62", Patterns::Double());
+    parameter_handler.declare_entry("Bulk Modulus", "833.33", Patterns::Double());
+    parameter_handler.declare_entry("Yield Stress", "1", Patterns::Double());
+    parameter_handler.declare_entry("Linear Hardening Modulus", "3", Patterns::Double());
 
     parameter_handler.leave_subsection();
 
@@ -495,10 +489,10 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    /*constrained_shear_no_lateral_displacement   = true;*/
+    constrained_shear_no_lateral_displacement   = true;
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    uniaxial_compression                        = true;
+    /*uniaxial_compression                        = true;*/
 
     parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
@@ -1513,13 +1507,16 @@ void Problem<dim>::output_results () {
     double displacement, total_reaction_force;
 
     total_reaction_force = 0.0;
-    for (auto boundary_dof : z_boundary_dofs) {
+    for (auto boundary_dof : y_boundary_dofs) {
         total_reaction_force += system_reaction_forces[boundary_dof];
     }
 
-    displacement = solution[z_boundary_dofs[0]];
+    displacement = solution[y_boundary_dofs[0]];
 
-    force_displacement_file << displacement << " " << total_reaction_force << std::endl;
+    force_displacement_file 
+        << displacement << " "
+        << nodal_output_L2[4][0] << " "
+        << std::endl;
 
     // -------------------------------------------------------------------------
     

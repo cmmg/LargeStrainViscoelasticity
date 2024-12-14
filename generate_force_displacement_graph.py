@@ -8,6 +8,7 @@ class Reader:
 
     def __init__(self):
 
+        # self.force_displacement_data_file_name = "text_output_file.txt"
         self.force_displacement_data_file_name = "force_displacement_file.txt"
         self.parameters_file_name = "parameters.json"
 
@@ -43,22 +44,22 @@ class Reader:
         axes.set_xlabel("Displacement")
         axes.set_ylabel("Force")
 
-        parameter_info = \
-        f"K         = {self.K}"         + "\n" + \
-        f"mu0       = {self.mu0}"       + "\n" + \
-        f"sigma0    = {self.sigma0}"    + "\n" + \
-        f"gammadot0 = {self.gammadot0}" + "\n" + \
-        f"m         = {self.m}"
-
-        axes.text(
-            1.05, 0.5,
-            parameter_info,
-            transform=axes.transAxes,
-            fontsize=10,
-            fontfamily='monospace',
-            bbox=dict(facecolor='white', alpha=1.0),
-            verticalalignment='center')
-
+        # parameter_info = \
+        # f"K         = {self.K}"         + "\n" + \
+        # f"mu0       = {self.mu0}"       + "\n" + \
+        # f"sigma0    = {self.sigma0}"    + "\n" + \
+        # f"gammadot0 = {self.gammadot0}" + "\n" + \
+        # f"m         = {self.m}"
+        #
+        # axes.text(
+        #     1.05, 0.5,
+        #     parameter_info,
+        #     transform=axes.transAxes,
+        #     fontsize=10,
+        #     fontfamily='monospace',
+        #     bbox=dict(facecolor='white', alpha=1.0),
+        #     verticalalignment='center')
+        #
         plt.tight_layout();
 
         plt.savefig("force_displacement.png")
@@ -68,5 +69,5 @@ class Reader:
 reader = Reader()
 
 reader.read_force_displacement_data_into_arrays()
-reader.read_parameters()
+# reader.read_parameters()
 reader.generate_force_displacement_graph()
