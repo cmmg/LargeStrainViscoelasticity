@@ -15,7 +15,7 @@
     "Material Parameters" : {
         "Shear Modulus" : 300.0,
         "Bulk Modulus" : 800.0,
-        "Yield Stress" : 10.0,
+        "Yield Stress" : 1e-10,
         "Linear Hardening Modulus" : 200.0
     }
 }

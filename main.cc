@@ -37,10 +37,10 @@ using namespace dealii;
 
 #include <iostream>
 
-/*#include "elastic_mechanics_large_strain.h"*/
-/*#include "viscoelastic_mechanics_large_strain.h"*/
-#include "elasto_plastic_mechanics_large_strain.h"
+#include "elastic_mechanics_large_strain.h"
+/*#include "elasto_plastic_mechanics_large_strain.h"*/
 /*#include "viscoelastic_mechanics_small_strain.h"*/
+/*#include "viscoelastic_mechanics_large_strain.h"*/
 
 template <int dim>
 class Problem {
@@ -489,10 +489,10 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    constrained_shear_no_lateral_displacement   = true;
+    /*constrained_shear_no_lateral_displacement   = true;*/
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    /*uniaxial_compression                        = true;*/
+    uniaxial_compression                        = true;
 
     parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
@@ -1526,7 +1526,7 @@ void Problem<dim>::output_results () {
     
 int main() {
 
-    std::cout << "\n---- Simulation started\n" << std::endl;
+    std::cout << "\n---- Calculation started\n" << std::endl;
 
     // Create the problem
     Problem<3> problem;
@@ -1534,7 +1534,7 @@ int main() {
     // Solve the problem
     problem.run();
 
-    std::cout << "\n---- Simulation ended" << std::endl;
+    std::cout << "\n---- Calculation ended" << std::endl;
 
     return 0;
 

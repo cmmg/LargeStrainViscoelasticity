@@ -38,14 +38,22 @@ class Material {
         Tensor<2, dim> F_e; // Elastic part of the deformation gradient
         Tensor<2, dim> F_p; // Plastic part of the deformation gradient
         SymmetricTensor<2, dim> kirchhoff_stress; 
-        SymmetricTensor<2, dim> n_trial; // Unit tensor in direction of trial deviatoric stress
 
         double gamma;
         double delta_gamma;
         double alpha;
         double pressure;
 
+        double mu_bar;
+        double tau_d_trial_norm;
+        SymmetricTensor<2, dim> n_trial; // Unit tensor in direction of trial deviatoric stress
+
         SymmetricTensor<2, dim> tensor_square_root(SymmetricTensor<2, dim> B);
+        Tensor<2, dim> multiply_symmetric_tensors(SymmetricTensor<2, dim> A,
+                                                  SymmetricTensor<2, dim> B);
+
+        double dU_dJ(double J);
+        double dp_dJ(double J);
 };
 
 template <int dim>
@@ -126,22 +134,31 @@ void Material<dim>::perform_constitutive_update() {
 
     SymmetricTensor<2, dim> b_e_bar_trial = symmetrize(F_bar * C_p_inv * transpose(F_bar));
 
-    double I_bar  = (1.0/3.0) * trace(b_e_bar_trial);
-    double mu_bar = I_bar * mu;
+    mu_bar = (1.0/3.0) * trace(b_e_bar_trial) * mu;
 
     SymmetricTensor<2, dim> tau_d_trial = mu * deviator(b_e_bar_trial);
 
-    n_trial = tau_d_trial / tau_d_trial.norm();
+    tau_d_trial_norm = tau_d_trial.norm();
 
-    double f_trial = tau_d_trial.norm() - sqrt(2.0/3.0) * (H * alpha + sigma_y);
-
-    if (f_trial <= 0) { // Elastic step
+    if (tau_d_trial_norm == 0) {
 
         delta_gamma = 0.0;
 
-    } else { // Plastic step
+    } else {
 
-        delta_gamma = (f_trial / 2.0) / (mu_bar + H / 3.0);
+        n_trial = tau_d_trial / tau_d_trial.norm();
+
+        double f_trial = tau_d_trial.norm() - sqrt(2.0/3.0) * (H * alpha + sigma_y);
+
+        if (f_trial <= 0) { // Elastic step
+
+            delta_gamma = 0.0;
+
+        } else { // Plastic step
+
+            delta_gamma = (f_trial / 2.0) / (mu_bar + H / 3.0);
+
+        }
 
     }
 
@@ -150,7 +167,7 @@ void Material<dim>::perform_constitutive_update() {
 
     SymmetricTensor<2, dim> tau_d = tau_d_trial - 2.0 * mu_bar * delta_gamma * n_trial;
 
-    pressure = (K/2.0) * (J*J - 1.0) / J;
+    pressure = K * log(J)
 
     kirchhoff_stress = J * pressure * I + tau_d;
 
@@ -166,8 +183,149 @@ void Material<dim>::perform_constitutive_update() {
 }
 
 template <int dim>
+Tensor<2, dim> Material<dim>::multiply_symmetric_tensors(SymmetricTensor<2, dim> A,
+                                                         SymmetricTensor<2, dim> B) {
+
+    Tensor<2, dim> C;
+
+    for(unsigned int i = 0; i < dim; ++i)
+        for(unsigned int j = 0; j < dim; ++j)
+            for(unsigned int k = 0; k < dim; ++k)
+                C[i][j] += A[i][k] * B[k][j];
+
+    return C;
+
+}
+
+template <int dim>
+double Material<dim>::dU_dJ(double J) {
+
+    // This function assumes that the internal energy of the material can be
+    // divided into a volumetric and a deviatoric part. This function
+    // calculates the derivative of the volumetric part of the internal energy
+    // with respect to the determinant of the deformation gradient.
+
+    double pressure;
+
+    return pressure;
+
+}
+
+template <int dim>
+double Material<dim>::dp_dJ(double J) {
+
+    // This function assumes that the internal energy of the material can be
+    // divided into a volumetric and a deviatoric part. This function
+    // calculates the derivative of the pressure with respect to the
+    // determinant of the deformation gradient.
+
+    double dp_dJ;
+
+    return dp_dJ;
+
+}
+
+template <int dim>
 void Material<dim>::compute_spatial_tangent_modulus() {
+    
+    Tensor<2, dim> F = deformation_gradient;
 
-    spatial_tangent_modulus = 0.0;
+    double J = determinant(F);
 
+    SymmetricTensor<2, dim> C     = symmetrize(transpose(F) * F);
+    SymmetricTensor<2, dim> C_inv = invert(C);
+
+    SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);
+
+    double f_h     = K * J * log(J);
+    double df_h_dJ = K * (J/2.0) * (log(J) + 1.0);
+
+    SymmetricTensor<4, dim> dS_h_dC = f_h * dC_inv_dC
+                                    + df_h_dJ * outer_product(C_inv, C_inv);
+
+    // Start computing deviatoric tangent modulus
+    SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv)
+                                    + outer_product(C_inv, I)
+                                    - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)
+                                    + trace(C) * dC_inv_dC;
+
+    dS_d_dC *= - mu * pow(J, -2.0/3.0) / 3.0;
+
+    // End computing deviatoric tangent modulus
+
+    SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
+
+    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
+
+    /**/
+    /*if (delta_gamma > 0) {*/
+    /**/
+    /*    double beta_0 = 1.0 + H/(3.0 * mu_bar);*/
+    /**/
+    /*    double beta_1 = 2.0 * mu_bar * delta_gamma / tau_d_trial_norm;*/
+    /**/
+    /*    double beta_2 = (2.0 / 3.0)*/
+    /*                  * (1.0 - 1.0 / beta_1)*/
+    /*                  * (tau_d_trial_norm / mu_bar) * delta_gamma;*/
+    /**/
+    /*    double beta_3 = 1.0 / beta_0 - beta_1 - beta_2;*/
+    /**/
+    /*    double beta_4 = (1.0 / beta_0 - beta_1) * (tau_d_trial_norm / mu_bar);*/
+    /**/
+    /*    SymmetricTensor<4, dim> C_bar = 2.0 * mu_bar * (S - IxI / 3.0)*/
+    /*                                  - (2.0 / 3.0) * tau_d_trial_norm */
+    /*                                  * (outer_product(I, n_trial)*/
+    /*                                    +*/
+    /*                                    outer_product(n_trial, I));*/
+    /**/
+    /*    double J = determinant(deformation_gradient);*/
+    /**/
+    /*    double Ud = pressure;*/
+    /*    double Udd = (K/2.0) * (1.0 - 1.0/J*J);*/
+    /**/
+    /*    SymmetricTensor<4, dim> C = (Ud + J * Udd) * J * IxI - 2 * J * Ud * S + C_bar;*/
+    /**/
+    /*    SymmetricTensor<2, dim> n_squared = symmetrize(multiply_symmetric_tensors(n_trial, n_trial));*/
+    /**/
+    /*    SymmetricTensor<4, dim> D = 0.5 * (outer_product(n_trial, n_squared)*/
+    /*                                       +*/
+    /*                                       outer_product(n_squared, n_trial));*/
+    /**/
+    /*    spatial_tangent_modulus = C + beta_1 * C_bar */
+    /*                            - 2 * mu_bar * beta_3 * outer_product(n_trial, n_trial)*/
+    /*                            - 2 * mu_bar * beta_4 * D;*/
+    /**/
+    /*    if (integration_point_index == 1) {*/
+    /*        std::cout << "delta_gamma > 0" << std::endl;*/
+    /*    }*/
+    /**/
+    /*} else {*/
+    /**/
+    /*    Tensor<2, dim> F = deformation_gradient;*/
+    /**/
+    /*    double J = determinant(F);*/
+    /**/
+    /*    SymmetricTensor<2, dim> C     = symmetrize(transpose(F) * F);*/
+    /*    SymmetricTensor<2, dim> C_inv = invert(C);*/
+    /**/
+    /*    SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);*/
+    /**/
+    /*    SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv) + outer_product(C_inv, I)*/
+    /*                                    - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)*/
+    /*                                    + trace(C) * dC_inv_dC;*/
+    /**/
+    /*    dS_d_dC *= - mu * pow(J, -2.0/3.0) / 3.0;*/
+    /**/
+    /*    double Ud  = pressure;*/
+    /*    double Udd = (K/2.0) * (1.0 - 1.0/J*J);*/
+    /**/
+    /*    SymmetricTensor<4, dim> hydrostatic_tangent_modulus = (Ud + J * Udd) * IxI - 2 * Ud * S;*/
+    /**/
+    /*    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_d_dC, F)*/
+    /*                            + hydrostatic_tangent_modulus;*/
+    /**/
+    /*    if (integration_point_index == 1) {*/
+    /*        std::cout << "delta_gamma <= 0" << std::endl;*/
+    /*    }*/
+    /*}*/
 }
