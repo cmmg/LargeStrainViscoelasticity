@@ -54,6 +54,7 @@ class Material {
 
         double dU_dJ(double J);
         double dp_dJ(double J);
+        SymmetricTensor<4, dim> compute_spatial_volumetric_tangent_modulus();
 };
 
 template <int dim>
@@ -167,7 +168,7 @@ void Material<dim>::perform_constitutive_update() {
 
     SymmetricTensor<2, dim> tau_d = tau_d_trial - 2.0 * mu_bar * delta_gamma * n_trial;
 
-    pressure = K * log(J);
+    pressure = dU_dJ(J);
 
     kirchhoff_stress = J * pressure * I + tau_d;
 
@@ -207,6 +208,8 @@ double Material<dim>::dU_dJ(double J) {
 
     double pressure;
 
+    pressure = K * log(J);
+
     return pressure;
 
 }
@@ -221,7 +224,18 @@ double Material<dim>::dp_dJ(double J) {
 
     double dp_dJ;
 
+    dp_dJ = K / J;
+
     return dp_dJ;
+
+}
+
+template <int dim>
+SymmetricTensor<4, dim> Material<dim>::compute_spatial_volumetric_tangent_modulus() {
+
+    double J = determinant(deformation_gradient);
+
+    return (dU_dJ(J) + J * dp_dJ(J)) * IxI - 2 * dU_dJ(J) * S;
 
 }
 
@@ -237,11 +251,7 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);
 
-    double f_h     = K * J * log(J);
-    double df_h_dJ = K * (J/2.0) * (log(J) + 1.0);
-
-    SymmetricTensor<4, dim> dS_h_dC = f_h * dC_inv_dC
-                                    + df_h_dJ * outer_product(C_inv, C_inv);
+    SymmetricTensor<4, dim> spatial_volumetric_tangent_modulus = compute_spatial_volumetric_tangent_modulus();
 
     // Start computing deviatoric tangent modulus
     SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv)
@@ -253,9 +263,8 @@ void Material<dim>::compute_spatial_tangent_modulus() {
 
     // End computing deviatoric tangent modulus
 
-    SymmetricTensor<4, dim> dS_dC = dS_d_dC + dS_h_dC;
-
-    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_dC, F);
+    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_d_dC, F)
+                            + spatial_volumetric_tangent_modulus;
 
     /**/
     /*if (delta_gamma > 0) {*/
