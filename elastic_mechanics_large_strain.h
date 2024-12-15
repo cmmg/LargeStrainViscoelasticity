@@ -64,12 +64,8 @@ Material<dim>::Material() {
 template <int dim>
 void Material<dim>::load_material_parameters(ParameterHandler &parameter_handler) {
 
-    K    = parameter_handler.get_double("K");
-    mu_0 = parameter_handler.get_double("mu0");
-
-    gamma_dot_0 = parameter_handler.get_double("gammadot0");
-    sigma_0     = parameter_handler.get_double("sigma0");
-    m           = parameter_handler.get_double("m");
+    K    = parameter_handler.get_double("Bulk Modulus");
+    mu_0 = parameter_handler.get_double("Shear Modulus");
 
 }
 
@@ -213,35 +209,6 @@ void Material<dim>::compute_spatial_tangent_modulus() {
                                     + trace(C) * dC_inv_dC;
 
     dS_d_dC *= - mu_0 * pow(J, -2.0/3.0) / 3.0;
-
-    /*// Auxiliary tensors for calculating the deviatoric tangent modulus*/
-    /*SymmetricTensor<2, dim> C_B_inv = invert(symmetrize(transpose(F_B) * F_B));*/
-    /*SymmetricTensor<4, dim> X_1, Y_1, X_2, Y_2;*/
-    /**/
-    /*X_1 = outer_product(C_B_inv, C_inv) */
-    /*    - (1.0/3.0) * (C_B_inv * C_inv) * outer_product(C_inv, C_inv)*/
-    /*    + (C_B_inv * C_inv) * dC_inv_dC*/
-    /*    + outer_product(C_B_inv, C_inv); */
-    /**/
-    /*X_1 *= -(1.0/3.0) * mu_0 * pow(J, -2.0/3.0);*/
-    /**/
-    /*Y_1 = mu_0 * Physics::Elasticity::StandardTensors<dim>::Dev_P(F);	*/
-    /**/
-    /*double f_d = - gamma_dot_0 * delta_t * pow(tau_d_norm, m - 3.0) * pow(sigma_0, -m);*/
-    /**/
-    /*SymmetricTensor<2, dim> Sd = Physics::Transformations::Contravariant::pull_back(tau_d, F);	*/
-    /**/
-    /*Tensor<2, dim> C_Sd = multiply_symmetric_tensors(C, Sd);*/
-    /*SymmetricTensor<2, dim> Sd_C_Sd = symmetrize(Sd * C_Sd);*/
-    /**/
-    /*Tensor<2, dim> Sd_C = multiply_symmetric_tensors(Sd, C);*/
-    /*SymmetricTensor<2, dim> C_Sd_C = symmetrize(C * Sd_C);*/
-    /**/
-    /*X_2 = f_d * (m - 1.0) * outer_product(Sd, Sd_C_Sd);*/
-    /**/
-    /*Y_2 = f_d * ((m - 1.0) * outer_product(Sd, C_Sd_C) + pow(tau_d_norm, 2.0) * S);*/
-    /**/
-    /*dS_d_dC = invert(S - Y_1 * Y_2) * (X_1 + Y_1 * X_2);*/
 
     // End computing deviatoric tangent modulus
 
