@@ -37,8 +37,8 @@ using namespace dealii;
 
 #include <iostream>
 
-#include "elastic_mechanics_large_strain.h"
-/*#include "elasto_plastic_mechanics_large_strain.h"*/
+/*#include "elastic_mechanics_large_strain.h"*/
+#include "elasto_plastic_mechanics_large_strain.h"
 /*#include "viscoelastic_mechanics_small_strain.h"*/
 /*#include "viscoelastic_mechanics_large_strain.h"*/
 

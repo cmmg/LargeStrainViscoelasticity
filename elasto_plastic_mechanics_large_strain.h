@@ -167,7 +167,7 @@ void Material<dim>::perform_constitutive_update() {
 
     SymmetricTensor<2, dim> tau_d = tau_d_trial - 2.0 * mu_bar * delta_gamma * n_trial;
 
-    pressure = K * log(J)
+    pressure = K * log(J);
 
     kirchhoff_stress = J * pressure * I + tau_d;
 
