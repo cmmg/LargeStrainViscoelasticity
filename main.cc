@@ -38,9 +38,9 @@ using namespace dealii;
 #include <iostream>
 
 /*#include "elastic_mechanics_large_strain.h"*/
-#include "elasto_plastic_mechanics_large_strain.h"
+/*#include "elasto_plastic_mechanics_large_strain.h"*/
 /*#include "viscoelastic_mechanics_small_strain.h"*/
-/*#include "viscoelastic_mechanics_large_strain.h"*/
+#include "viscoelastic_mechanics_large_strain.h"
 
 template <int dim>
 class Problem {
@@ -285,10 +285,11 @@ void Problem<dim>::declare_parameters () {
 
     parameter_handler.enter_subsection("Material Parameters");
 
-    parameter_handler.declare_entry("Shear Modulus", "384.62", Patterns::Double());
     parameter_handler.declare_entry("Bulk Modulus", "833.33", Patterns::Double());
-    parameter_handler.declare_entry("Yield Stress", "1", Patterns::Double());
-    parameter_handler.declare_entry("Linear Hardening Modulus", "3", Patterns::Double());
+    parameter_handler.declare_entry("Shear Modulus", "384.62", Patterns::Double());
+    parameter_handler.declare_entry("Viscous Resistance", "1", Patterns::Double());
+    parameter_handler.declare_entry("Dimensional Scaling Constant", "3", Patterns::Double());
+    parameter_handler.declare_entry("Strain Rate Exponent", "3", Patterns::Double());
 
     parameter_handler.leave_subsection();
 
@@ -489,10 +490,10 @@ void Problem<dim>::generate_boundary_conditions () {
     bool pure_shear                                  = false;
     bool uniaxial_compression                        = false;
 
-    /*constrained_shear_no_lateral_displacement   = true;*/
+    constrained_shear_no_lateral_displacement   = true;
     /*constrained_shear_with_lateral_displacement = true;*/
     /*pure_shear                                  = true;*/
-    uniaxial_compression                        = true;
+    /*uniaxial_compression                        = true;*/
 
     parameter_handler.enter_subsection("Domain Geometry and Mesh");
     double height = parameter_handler.get_double("height");
@@ -571,8 +572,9 @@ void Problem<dim>::generate_boundary_conditions () {
             or
             (current_time > 2.0 and current_time <= 2.5)
             or
-            (current_time > 3.0 and current_time <= 3.5)
-        ) {
+            (current_time > 3.0 and current_time <= 3.5)) 
+        /*if (current_time <= 0.5)*/
+        {
             VectorTools::interpolate_boundary_values(
                             dof_handler,
                             5,
@@ -584,6 +586,7 @@ void Problem<dim>::generate_boundary_conditions () {
                             dof_handler,
                             5,
                             Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
+                            /*Functions::ConstantFunction<dim>(0.0, dim),*/
                             non_homogenous_constraints,
                             fe.component_mask(y_component));
         }
@@ -871,7 +874,7 @@ void Problem<dim>::generate_boundary_conditions () {
             VectorTools::interpolate_boundary_values(
                             dof_handler,
                             5,
-                            Functions::ConstantFunction<dim>(delta_t*top_surface_speed, dim),
+                            Functions::ConstantFunction<dim>(-delta_t*top_surface_speed, dim),
                             non_homogenous_constraints,
                             fe.component_mask(z_component));
         }
@@ -1390,11 +1393,9 @@ void Problem<dim>::output_results () {
     // -------------------------------------------------------------------------
 
     // Output data from L2 projection
-    std::vector<DataComponentInterpretation::DataComponentInterpretation>
-    data_component_interpretation_L2;
+    std::vector<DataComponentInterpretation::DataComponentInterpretation> data_component_interpretation_L2;
 
-    data_component_interpretation_L2
-        .push_back(DataComponentInterpretation::component_is_scalar);
+    data_component_interpretation_L2 .push_back(DataComponentInterpretation::component_is_scalar);
 
     data_out.add_data_vector(
                         dof_handler_L2,
@@ -1515,7 +1516,8 @@ void Problem<dim>::output_results () {
 
     force_displacement_file 
         << displacement << " "
-        << nodal_output_L2[4][0] << " "
+        /*<< current_time << " "*/
+        << total_reaction_force << " "
         << std::endl;
 
     // -------------------------------------------------------------------------

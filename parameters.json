@@ -3,19 +3,20 @@
         "length" : 1.0,
         "width" : 1.0,
         "height" : 1.0,
-        "global refinement level" : 0
+        "global refinement level" : 2
     }
     ,
     "Time Stepping and Iteration Control" : {
         "relative tolerance" : 1e-7,
         "time step length" : 1e-3,
-        "total simulation time" : 2e-3
+        "total simulation time" : 4.0
     }
     ,
     "Material Parameters" : {
-        "Shear Modulus" : 300.0,
+        "Shear Modulus" : 500.0,
         "Bulk Modulus" : 800.0,
-        "Yield Stress" : 1e-10,
-        "Linear Hardening Modulus" : 200.0
+        "Viscous Resistance" : 10.0,
+        "Dimensional Scaling Constant" : 1e-6,
+        "Strain Rate Exponent" : 2
     }
 }

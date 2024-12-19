@@ -172,14 +172,6 @@ void Material<dim>::perform_constitutive_update() {
 
     cauchy_stress = K * log(J) * I + (mu_0/J) * deviator(b_bar);
 
-    if (cell_index == 1 && integration_point_index == 1) {
-        *text_output_file 
-        << cauchy_stress[2][2] << "|"
-        /*<< F_B.norm() << "|"*/
-        /*<< x << " "*/
-        << std::endl;
-    }
-
 }
 
 template <int dim>

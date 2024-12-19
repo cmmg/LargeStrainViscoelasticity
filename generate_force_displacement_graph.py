@@ -29,11 +29,11 @@ class Reader:
 
         material_parameters_data = all_parameters_data["Viscoelastic Material Parameters"]
 
-        self.K         = material_parameters_data["K"]
-        self.mu0       = material_parameters_data["mu0"]
-        self.sigma0    = material_parameters_data["sigma0"]
-        self.gammadot0 = material_parameters_data["gammadot0"]
-        self.m         = material_parameters_data["m"]
+        self.K         = material_parameters_data["Bulk Modulus"]
+        self.mu0       = material_parameters_data["Shear Modulus"]
+        self.sigma0    = material_parameters_data["Viscous Resistance"]
+        self.gammadot0 = material_parameters_data["Dimensional Scaling Constant"]
+        self.m         = material_parameters_data["Strain Rate Exponent"]
 
     def generate_force_displacement_graph(self):
 

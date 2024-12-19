@@ -241,100 +241,69 @@ SymmetricTensor<4, dim> Material<dim>::compute_spatial_volumetric_tangent_modulu
 
 template <int dim>
 void Material<dim>::compute_spatial_tangent_modulus() {
-    
-    Tensor<2, dim> F = deformation_gradient;
 
-    double J = determinant(F);
+    if (delta_gamma > 0) {
 
-    SymmetricTensor<2, dim> C     = symmetrize(transpose(F) * F);
-    SymmetricTensor<2, dim> C_inv = invert(C);
+        double beta_0 = 1.0 + H/(3.0 * mu_bar);
 
-    SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);
+        double beta_1 = 2.0 * mu_bar * delta_gamma / tau_d_trial_norm;
 
-    SymmetricTensor<4, dim> spatial_volumetric_tangent_modulus = compute_spatial_volumetric_tangent_modulus();
+        double beta_2 = (2.0 / 3.0)
+                      * (1.0 - 1.0 / beta_1)
+                      * (tau_d_trial_norm / mu_bar) * delta_gamma;
 
-    // Start computing deviatoric tangent modulus
-    SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv)
-                                    + outer_product(C_inv, I)
-                                    - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)
-                                    + trace(C) * dC_inv_dC;
+        double beta_3 = 1.0 / beta_0 - beta_1 - beta_2;
 
-    dS_d_dC *= - mu * pow(J, -2.0/3.0) / 3.0;
+        double beta_4 = (1.0 / beta_0 - beta_1) * (tau_d_trial_norm / mu_bar);
 
-    // End computing deviatoric tangent modulus
+        SymmetricTensor<4, dim> C_bar = 2.0 * mu_bar * (S - IxI / 3.0)
+                                      - (2.0 / 3.0) * tau_d_trial_norm 
+                                      * (outer_product(I, n_trial)
+                                        +
+                                        outer_product(n_trial, I));
 
-    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_d_dC, F)
-                            + spatial_volumetric_tangent_modulus;
+        double J = determinant(deformation_gradient);
 
-    /**/
-    /*if (delta_gamma > 0) {*/
-    /**/
-    /*    double beta_0 = 1.0 + H/(3.0 * mu_bar);*/
-    /**/
-    /*    double beta_1 = 2.0 * mu_bar * delta_gamma / tau_d_trial_norm;*/
-    /**/
-    /*    double beta_2 = (2.0 / 3.0)*/
-    /*                  * (1.0 - 1.0 / beta_1)*/
-    /*                  * (tau_d_trial_norm / mu_bar) * delta_gamma;*/
-    /**/
-    /*    double beta_3 = 1.0 / beta_0 - beta_1 - beta_2;*/
-    /**/
-    /*    double beta_4 = (1.0 / beta_0 - beta_1) * (tau_d_trial_norm / mu_bar);*/
-    /**/
-    /*    SymmetricTensor<4, dim> C_bar = 2.0 * mu_bar * (S - IxI / 3.0)*/
-    /*                                  - (2.0 / 3.0) * tau_d_trial_norm */
-    /*                                  * (outer_product(I, n_trial)*/
-    /*                                    +*/
-    /*                                    outer_product(n_trial, I));*/
-    /**/
-    /*    double J = determinant(deformation_gradient);*/
-    /**/
-    /*    double Ud = pressure;*/
-    /*    double Udd = (K/2.0) * (1.0 - 1.0/J*J);*/
-    /**/
-    /*    SymmetricTensor<4, dim> C = (Ud + J * Udd) * J * IxI - 2 * J * Ud * S + C_bar;*/
-    /**/
-    /*    SymmetricTensor<2, dim> n_squared = symmetrize(multiply_symmetric_tensors(n_trial, n_trial));*/
-    /**/
-    /*    SymmetricTensor<4, dim> D = 0.5 * (outer_product(n_trial, n_squared)*/
-    /*                                       +*/
-    /*                                       outer_product(n_squared, n_trial));*/
-    /**/
-    /*    spatial_tangent_modulus = C + beta_1 * C_bar */
-    /*                            - 2 * mu_bar * beta_3 * outer_product(n_trial, n_trial)*/
-    /*                            - 2 * mu_bar * beta_4 * D;*/
-    /**/
-    /*    if (integration_point_index == 1) {*/
-    /*        std::cout << "delta_gamma > 0" << std::endl;*/
-    /*    }*/
-    /**/
-    /*} else {*/
-    /**/
-    /*    Tensor<2, dim> F = deformation_gradient;*/
-    /**/
-    /*    double J = determinant(F);*/
-    /**/
-    /*    SymmetricTensor<2, dim> C     = symmetrize(transpose(F) * F);*/
-    /*    SymmetricTensor<2, dim> C_inv = invert(C);*/
-    /**/
-    /*    SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);*/
-    /**/
-    /*    SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv) + outer_product(C_inv, I)*/
-    /*                                    - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)*/
-    /*                                    + trace(C) * dC_inv_dC;*/
-    /**/
-    /*    dS_d_dC *= - mu * pow(J, -2.0/3.0) / 3.0;*/
-    /**/
-    /*    double Ud  = pressure;*/
-    /*    double Udd = (K/2.0) * (1.0 - 1.0/J*J);*/
-    /**/
-    /*    SymmetricTensor<4, dim> hydrostatic_tangent_modulus = (Ud + J * Udd) * IxI - 2 * Ud * S;*/
-    /**/
-    /*    spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_d_dC, F)*/
-    /*                            + hydrostatic_tangent_modulus;*/
-    /**/
-    /*    if (integration_point_index == 1) {*/
-    /*        std::cout << "delta_gamma <= 0" << std::endl;*/
-    /*    }*/
-    /*}*/
+        double Ud  = dU_dJ(J);
+        double Udd = dp_dJ(J);
+
+        SymmetricTensor<4, dim> C = (Ud + J * Udd) * J * IxI - 2 * J * Ud * S + C_bar;
+
+        SymmetricTensor<2, dim> n_squared = symmetrize(multiply_symmetric_tensors(n_trial, n_trial));
+
+        SymmetricTensor<4, dim> D = 0.5 * (outer_product(n_trial, n_squared)
+                                           +
+                                           outer_product(n_squared, n_trial));
+
+        spatial_tangent_modulus = C + beta_1 * C_bar 
+                                - 2 * mu_bar * beta_3 * outer_product(n_trial, n_trial)
+                                - 2 * mu_bar * beta_4 * D;
+
+    } else {
+
+        Tensor<2, dim> F = deformation_gradient;
+
+        double J = determinant(F);
+
+        SymmetricTensor<2, dim> C     = symmetrize(transpose(F) * F);
+        SymmetricTensor<2, dim> C_inv = invert(C);
+
+        SymmetricTensor<4, dim> dC_inv_dC = Physics::Elasticity::StandardTensors<dim>::dC_inv_dC(F);
+
+        SymmetricTensor<4, dim> spatial_volumetric_tangent_modulus = compute_spatial_volumetric_tangent_modulus();
+
+        // Start computing deviatoric tangent modulus
+        SymmetricTensor<4, dim> dS_d_dC = outer_product(I, C_inv)
+                                        + outer_product(C_inv, I)
+                                        - (1.0/3.0) * trace(C) * outer_product(C_inv, C_inv)
+                                        + trace(C) * dC_inv_dC;
+
+        dS_d_dC *= - mu * pow(J, -2.0/3.0) / 3.0;
+
+        // End computing deviatoric tangent modulus
+
+        spatial_tangent_modulus = (1.0/J) * Physics::Transformations::Contravariant::push_forward(2.0 * dS_d_dC, F)
+                                + spatial_volumetric_tangent_modulus;
+    }
+
 }
